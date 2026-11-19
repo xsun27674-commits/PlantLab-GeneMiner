@@ -15,6 +15,8 @@ RUN --mount=type=secret,id=pip_ca \
 COPY app.py .
 COPY src/ src/
 COPY data/ data/
+COPY assets/ assets/
+COPY locales/ locales/
 COPY .streamlit/config.toml .streamlit/config.toml
 EXPOSE 7860
 CMD ["python", "-m", "streamlit", "run", "app.py", "--server.address=0.0.0.0", "--server.port=7860", "--server.headless=true"]

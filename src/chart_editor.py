@@ -9,6 +9,8 @@ import plotly.io as pio
 from plotly.colors import qualitative
 import streamlit as st
 
+from src.i18n import tr
+
 from src.export_utils import csv_bytes
 
 PALETTE = tuple(qualitative.Dark24)
@@ -148,16 +150,16 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             current = replace(current, **{field: value})
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
-    with st.expander("图表样式与导出"):
-        preset = st.selectbox("绘图模板", PRESETS, index=2, key=f"style_preset_{key}")
-        if st.button("应用模板", key=f"style_apply_{key}"):
+    with st.expander(tr("图表样式与导出")):
+        preset = st.selectbox(tr("绘图模板"), PRESETS, index=2, key=f"style_preset_{key}", format_func=tr)
+        if st.button(tr("应用模板"), key=f"style_apply_{key}"):
             if preset != "自定义":
                 defaults = replace(defaults, font_size=19 if preset == "教学展示" else 13,
                                    grid=preset == "教学展示", background="#FFFFFF",
                                    color="#147756" if preset == "教学展示" else "#203C5F")
             reset_controls(key, defaults)
-        config = st.file_uploader("导入绘图配置 JSON", type=["json"], key=f"style_file_{key}")
-        if config is not None and st.button("恢复样式", key=f"style_import_{key}"):
+        config = st.file_uploader(tr("导入绘图配置 JSON"), type=["json"], key=f"style_file_{key}")
+        if config is not None and st.button(tr("恢复样式"), key=f"style_import_{key}"):
             try:
                 defaults = load_style(config.getvalue())
                 reset_controls(key, defaults)
@@ -177,6 +179,7 @@ def chart_panel(key, builder, data, defaults, groupable=False):
         values = asdict(defaults)
         for index, (field, label) in enumerate(names.items()):
             control = controls[index % 3]
+            label = tr(label)
             widget_key = f"style_value_{key}_{field}"
             value = values[field]
             if field in ("query_colors", "query_palette") and not groupable:
@@ -206,38 +209,40 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             style = defaults
 
     st.session_state[style_key] = style
-    figure = apply_style(builder(style.query_colors if groupable else False), style)
-    st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
-    with st.expander("图片导出"):
+    visible_style = replace(style, title=tr(style.title), x_title=tr(style.x_title),
+                            y_title=tr(style.y_title), legend_title=tr(style.legend_title))
+    figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
+    st.session_state.setdefault("report_figures", {})[key] = (visible_style.title, figure)
+    with st.expander(tr("图片导出")):
         filename = export_filename(
-            st.text_input("文件名", key, max_chars=80, key=f"filename_{key}"), key)
-        scale = st.slider("PNG 倍率", 1, 3, 2, key=f"scale_{key}")
+            st.text_input(tr("文件名"), key, max_chars=80, key=f"filename_{key}"), key)
+        scale = st.slider(tr("PNG 倍率"), 1, 3, 2, key=f"scale_{key}")
         formats = ["png", "svg", "pdf"] if static_images_enabled() else ["png", "svg"]
-        fmt = st.selectbox("图片格式", formats, key=f"format_{key}")
+        fmt = st.selectbox(tr("图片格式"), formats, key=f"format_{key}")
         if not static_images_enabled():
-            st.caption("选择 PNG 或 SVG 后，点击图表工具栏的相机图标下载。")
+            st.caption(tr("选择 PNG 或 SVG 后，点击图表工具栏的相机图标下载。"))
     st.plotly_chart(figure, key=f"plot_{key}", width="content", config={
         "displaylogo": False, "toImageButtonOptions": {
             "format": fmt if fmt != "pdf" else "png", "filename": filename,
             "width": style.width, "height": style.height, "scale": scale if fmt != "svg" else 1,
         },
     })
-    with st.expander("高级导出"):
+    with st.expander(tr("高级导出")):
         exports = st.columns(3)
-        exports[0].download_button("交互 HTML", pio.to_html(figure, full_html=True, include_plotlyjs=True),
+        exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),
                                    f"{filename}.html", "text/html", key=f"html_{key}")
-        exports[1].download_button("图表数据 CSV", csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
-        exports[2].download_button("样式 JSON", json.dumps(asdict(style), ensure_ascii=False, indent=2),
+        exports[1].download_button(tr("图表数据 CSV"), csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
+        exports[2].download_button(tr("样式 JSON"), json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{filename}.json", "application/json", key=f"json_{key}")
     if static_images_enabled():
         asset_key = f"image_{key}"
         signature = (fmt, scale, figure.to_json())
-        if st.button("生成静态图", key=f"render_{key}"):
+        if st.button(tr("生成静态图"), key=f"render_{key}"):
             st.session_state.pop(asset_key, None)
             try:
                 st.session_state[asset_key] = (signature, image_bytes(figure, fmt, scale if fmt == "png" else 1))
             except Exception:
-                st.error("静态图生成失败。请确认 Kaleido 和 Chrome/Chromium 可正常运行。")
+                st.error(tr("静态图生成失败。请确认 Kaleido 和 Chrome/Chromium 可正常运行。"))
         asset = st.session_state.get(asset_key)
         if asset and asset[0] == signature:
             mime = {"png": "image/png", "svg": "image/svg+xml", "pdf": "application/pdf"}[fmt]
