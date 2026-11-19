@@ -14,7 +14,7 @@ from src.alignment import AlignmentResult
 from src.blast_utils import Thresholds
 from src.chart_editor import ChartStyle, validate_style
 
-RECORDS = {"fasta_result", "blast_result", "pairwise_result", "pairwise_record", "report_figures",
+RECORDS = {"project_sequences", "batch_alignment", "fasta_result", "blast_result", "pairwise_result", "pairwise_record", "report_figures",
            "fasta_source", "blast_source", "last_report", "alignment_fasta", "sequence_grid_base", "sequence_grid_source", "sequence_ncbi_applied",
            "sequence_ncbi_table", "sequence_ncbi_selection", "sequence_ncbi_revision"}
 SCALARS = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
@@ -83,7 +83,7 @@ def restore(payload):
 def clear(session):
     for key in list(session):
         if keeps(key) or key.startswith(("style_value_", "image_", "open_", "workspace_", "_timed_", "_prepared_", "ncbi_",
-                                             "x_range_", "y_range_", "category_limit_", "category_count_")) or key in {
-            "fasta_upload", "blast_upload", "alignment_upload", "project_name", "project_species", "project_target",
+                                             "x_range_", "y_range_", "category_limit_", "category_count_", "fasta_upload_")) or key in {
+            "fasta_upload", "blast_upload", "fasta_upload_revision", "alignment_upload", "project_name", "project_species", "project_target",
         }:
             session.pop(key, None)

@@ -29,7 +29,7 @@ ALIASES = {
 def suggest_mapping(columns) -> dict[str, str]:
     by_name = {}
     for column in columns:
-        key = re.sub(r"[^a-z0-9]", "", column.lower())
+        key = re.sub(r"[^a-z0-9]", "", str(column).lower())
         by_name.setdefault(key, []).append(column)
     mapping = {}
     for field, aliases in ALIASES.items():

@@ -7,6 +7,8 @@ from src.i18n import tr, translator
 from Bio import SeqIO
 
 from src.alignment import align_sequences
+from src.batch_alignment_page import batch_page
+from src.project_data import project_status
 from src.export_utils import json_bytes
 from src.fasta_utils import analyze_fasta
 
@@ -15,6 +17,15 @@ MAX_FASTA_BYTES = 5 * 1024 * 1024
 
 def alignment_page():
     st.title(tr("成对序列比对"))
+    project_status()
+    project = st.session_state.get("project_sequences")
+    if project and project["type"] == "nucleotide":
+        view = st.radio(tr("本地比对来源"), ["当前项目", "手动成对比对"], horizontal=True,
+                        format_func=translator(), key="alignment_setting_view")
+        if view == "当前项目":
+            st.info(tr("本地 PairwiseAligner 得分不等于 BLAST bitscore，也不产生 E-value。"))
+            batch_page(project)
+            return
     st.session_state.pop("pairwise_record", None)
     st.info(tr("使用 Biopython 对两条序列进行全局或局部比对。数据库同源搜索需要独立的 BLAST 工作流。"))
     types = {"nucleotide": "DNA / 核酸", "protein": "蛋白质"}

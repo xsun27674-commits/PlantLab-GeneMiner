@@ -11,7 +11,7 @@ MAX_ROWS = 5000
 MAX_COLUMNS = 128
 
 
-def read_sequence_table(name, data):
+def read_sequence_table(name, data, allow_blast=False):
     if len(data) > MAX_BYTES:
         raise ValueError("序列表超过 10 MB。")
     try:
@@ -31,7 +31,7 @@ def read_sequence_table(name, data):
         raise ValueError("序列表最多支持 5,000 行与 128 列。")
     if len(frame.columns) < 2:
         raise ValueError("序列表至少需要两列：序列编号与序列内容。")
-    if {"qseqid", "sseqid", "evalue"} <= {str(column).strip().lower() for column in frame.columns}:
+    if not allow_blast and {"qseqid", "sseqid", "evalue"} <= {str(column).strip().lower() for column in frame.columns}:
         raise ValueError("这是 BLAST 命中表，请在 BLAST 候选筛选页面导入。")
     return frame
 

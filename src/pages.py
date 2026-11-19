@@ -1,6 +1,8 @@
 """Chinese Streamlit views for the analysis workflow."""
 
 from html import escape
+import csv
+from io import BytesIO
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -25,6 +27,7 @@ from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
+from src.project_data import classify_table, clear_sequence_project, project_status, register_sequences, sequence_columns
 from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -45,13 +48,18 @@ def source(kind, extensions):
     use_example = st.checkbox(tr("载入模拟教学数据"), key=f"{kind}_example")
     if use_example:
         return name, path.read_bytes(), "模拟教学数据"
-    widget_key = f"{kind}_upload"
+    widget_key = f"{kind}_upload_{st.session_state.get('fasta_upload_revision', 0)}" if kind == "fasta" else f"{kind}_upload"
     cache_key = f"{kind}_source"
 
     def remember_upload():
         upload = st.session_state[widget_key]
         if upload is None:
             st.session_state[cache_key] = None
+            if kind == "blast":
+                st.session_state.pop("blast_result", None)
+                for key in list(st.session_state.get("report_figures", {})):
+                    if key.startswith("blast_"):
+                        st.session_state["report_figures"].pop(key)
             return
         content = upload.getvalue()
         origin = "模拟教学数据" if content == path.read_bytes() else "用户上传"
@@ -64,6 +72,11 @@ def source(kind, extensions):
         st.caption(f'{tr("当前文件")} · {cached[0]}')
         if st.button(tr("清除当前文件"), key=f"clear_{kind}"):
             st.session_state.pop(cache_key)
+            if kind == "blast":
+                st.session_state.pop("blast_result", None)
+                for key in list(st.session_state.get("report_figures", {})):
+                    if key.startswith("blast_"):
+                        st.session_state["report_figures"].pop(key)
             return None
     if cached is not None and len(cached[1]) > 10 * 1024 * 1024:
         st.error(tr("文件超过 10 MB，请拆分后再上传。"))
@@ -91,6 +104,7 @@ def run_time():
 
 
 def sequence_source():
+    st.session_state.pop("_sequence_table_is_cds", None)
     ncbi_link()
     mode = st.radio(tr("序列输入方式"), ("upload", "grid"), key="sequence_input_mode",
                     format_func={"upload": tr("上传文件"), "grid": tr("在线表格")}.get,
@@ -104,14 +118,25 @@ def sequence_source():
         name, data, origin = upload
         rows = session_result("sequence_table", (name, sha256(data).digest()), read_sequence_table, name, data)
         options = list(rows.columns)
-        normalized = {str(column).strip().casefold().replace("_", " "): index
-                      for index, column in enumerate(options)}
+        kind, _ = classify_table(options)
+        if kind in ("blast", "incomplete_blast", "pairwise"):
+            raise ValueError("该表不是序列数据。请上传包含 Sequence ID 和 Sequence 的表格。")
+        ids, sequences = sequence_columns(options)
+        if not ids or not sequences:
+            raise ValueError("序列表缺少 Sequence ID 或 Sequence 列。")
+        if len(ids) == len(sequences) == 1:
+            evidence = any(str(column).strip().casefold().replace(" ", "") == "length(bp)" for column in options)
+            st.session_state["_sequence_table_is_cds"] = evidence or str(sequences[0]).casefold() in {"cds", "cds sequence"}
+            st.caption(tr("已识别序列表。"))
+            canonical = session_result("sequence_canonical", (name, sha256(data).digest(), ids[0], sequences[0]),
+                                       table_to_fasta, rows, ids[0], sequences[0])
+            return name, canonical, origin
         suffix = sha256(data).hexdigest()
         left, right = st.columns(2)
         identifier = left.selectbox(tr("序列编号列"), options, key=f"mapping_seqid_{suffix}",
-                                    index=normalized.get("sequence id", normalized.get("序列编号", 0)))
+                                    index=options.index(ids[0]))
         sequence = right.selectbox(tr("序列内容列"), options, key=f"mapping_sequence_{suffix}",
-                                   index=normalized.get("sequence", normalized.get("序列内容", 1)))
+                                   index=options.index(sequences[0]))
         with st.expander(tr("输入预览")):
             st.dataframe(rows.head(10), hide_index=True)
         return name, table_to_fasta(rows, identifier, sequence), origin
@@ -162,7 +187,10 @@ def next_step(label, destination, *, status=None, summary=None):
 
 def fasta():
     st.title(tr("FASTA 序列分析"))
-    previous = st.session_state.pop("fasta_result", None)
+    project_status()
+    if st.session_state.get("project_sequences"):
+        st.button(tr("清空当前序列数据"), on_click=clear_sequence_project)
+    previous = st.session_state.get("fasta_result")
     figures = st.session_state.setdefault("report_figures", {})
     for chart in ("fasta_length", "fasta_gc"):
         figures.pop(chart, None)
@@ -180,9 +208,9 @@ def fasta():
     )
     if pending_ncbi and selected is None:
         return
-    if selected and selected[2] == "NCBI Datasets":
+    if selected and (selected[2] == "NCBI Datasets" or st.session_state.get("_sequence_table_is_cds")):
         sequence_type = "nucleotide"
-        st.caption(tr("NCBI CDS 按核酸序列分析。"))
+        st.caption(tr("已识别为核酸序列数据。"))
     else:
         sequence_type = st.radio(tr("序列类型"), labels, index=None,
                                  format_func=lambda key, translate=translator(): translate(labels[key]),
@@ -197,6 +225,7 @@ def fasta():
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
+    register_sequences(fingerprint, name, origin, sequence_type, data)
     timestamp = previous["分析时间（UTC）"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["fasta_result"] = {
         "key": fingerprint, "上传文件名称": name, "文件来源": origin, "序列类型": labels[sequence_type],
@@ -223,55 +252,94 @@ def fasta():
     if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
         plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
     st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(frame.drop(columns="序列类型")), "fasta_statistics.csv", "text/csv")
-    next_step("下一步：BLAST 候选筛选 →", "BLAST 候选筛选",
-              status="序列分析已完成 ✓",
-              summary="下一阶段可导入已有 BLAST 比对结果，进行候选筛选。")
+    if sequence_type == "nucleotide" and len(frame) >= 2:
+        next_step("下一步：本地序列比对 →", "成对序列比对",
+                  status="序列分析已完成 ✓",
+                  summary="当前序列已保存到项目，可直接进行本地比对。")
+    elif st.session_state.get("blast_result"):
+        next_step("下一步：结果可视化 →", "结果可视化", status="序列分析已完成 ✓")
+    else:
+        st.caption(tr("当前序列已保存。批量比对需要至少两条核酸记录。"))
 
 
 def coverage_options(hits):
     return [field for field in COVERAGE if field in hits and hits[field].notna().any()]
 
 
+def reject_blast_table(kind, missing):
+    if kind in ("sequence", "incomplete_sequence"):
+        raise ValueError("已识别为核酸序列数据。请在 FASTA 序列分析或本地序列比对中使用。")
+    if kind == "pairwise":
+        raise ValueError("本地比对结果缺少 BLAST bitscore 和 E-value，请在成对序列比对中查看。")
+    raise ValueError("BLAST 表格缺少必需字段：" + "、".join(missing))
+
+
 def blast():
     st.title(tr("BLAST 候选筛选"))
     st.info(tr(NOTICE))
-    previous = st.session_state.pop("blast_result", None)
+    project_status()
+    if st.button(tr("前往本地序列比对")):
+        navigate("成对序列比对")
+    st.link_button(tr("前往 NCBI BLAST 官方页面 ↗"), "https://blast.ncbi.nlm.nih.gov/Blast.cgi")
+    previous = st.session_state.get("blast_result")
     figures = st.session_state.setdefault("report_figures", {})
-    saved_figures = {key: figures.pop(key) for key in list(figures) if key.startswith("blast_")}
-    selected = source("blast", ["csv", "tsv", "txt", "tab", "out"])
+    saved_figures = [key for key in figures if key.startswith("blast_")]
+    selected = source("blast", ["csv", "tsv", "txt", "tab", "out", "xlsx"])
     if selected is None:
-        st.info(tr("请上传 BLAST 表格或载入模拟教学数据。"))
+        existing = st.session_state.get("blast_result")
+        if existing:
+            st.dataframe(existing["filtered"], hide_index=True)
+            next_step("下一步：结果可视化 →", "结果可视化")
+        else:
+            st.info(tr("当前项目尚无 BLAST 命中结果。您可以使用本地序列比对功能，或上传外部 BLAST 结果。"))
         return
     name, data, origin = selected
     if origin == "模拟教学数据":
         st.caption(tr(origin))
     file_key = sha256(data).hexdigest()
     with st.expander(tr("表格格式与字段映射"), expanded=True):
+        sheet = name.lower().endswith(".xlsx")
         left, right = st.columns(2)
         delimiter = left.selectbox(tr("分隔符"), ["\t", ","], index=int(name.lower().endswith(".csv")),
                                    format_func=lambda value, translate=translator(): translate({"\t": "制表符（TSV）", ",": "逗号（CSV）"}[value]),
-                                   key=f"delimiter_{file_key}")
+                                   key=f"delimiter_{file_key}", disabled=sheet)
         header = right.selectbox(tr("表头"), ["auto", "yes", "no"],
                                  format_func=lambda value, translate=translator(): translate({"auto": "自动识别", "yes": "有表头", "no": "无表头"}[value]),
-                                 key=f"header_{file_key}")
+                                 key=f"header_{file_key}", disabled=sheet)
         try:
-            raw = session_result("blast_parse", (file_key, delimiter, header), read_blast, data, delimiter, header)
-        except ValueError as exc:
+            if sheet:
+                raw = session_result("blast_excel", file_key, read_sequence_table, name, data, True)
+            else:
+                lines = (line.decode("utf-8-sig") for line in BytesIO(data)
+                         if line.strip() and not line.lstrip().startswith(b"#"))
+                first_row = next(csv.reader(lines, delimiter=delimiter), [])
+                kind, missing = classify_table(first_row)
+                if kind in ("sequence", "incomplete_sequence", "pairwise", "incomplete_blast"):
+                    reject_blast_table(kind, missing)
+                raw = session_result("blast_parse", (file_key, delimiter, header), read_blast, data, delimiter, header)
+            kind, missing = classify_table(raw.columns)
+            if kind != "blast":
+                reject_blast_table(kind, missing)
+        except (ValueError, csv.Error) as exc:
             st.error(tr(str(exc)))
             return
         st.dataframe(raw.head(5), width="stretch", hide_index=True)
         suggested = suggest_mapping(raw.columns)
-        options = [None, *raw.columns]
-        mapping = {}
-        columns = st.columns(4)
-        for index, field in enumerate((*REQUIRED, *COVERAGE)):
-            selected_col = columns[index % 4].selectbox(
-                field, options, index=options.index(suggested.get(field)),
-                format_func=lambda value, translate=translator(): translate("未映射") if value is None else value,
-                key=f"mapping_{file_key}_{ord(delimiter)}_{header}_{field}",
-            )
-            if selected_col is not None:
-                mapping[field] = selected_col
+        if all(field in suggested for field in REQUIRED):
+            mapping = suggested
+            st.caption(tr("已自动映射 BLAST 必需字段。"))
+        else:
+            options = [None, *raw.columns]
+            mapping = {}
+            columns = st.columns(4)
+            for index, field in enumerate((*REQUIRED, *COVERAGE)):
+                selected_col = columns[index % 4].selectbox(
+                    field, options, index=options.index(suggested.get(field)),
+                    format_func=lambda value, translate=translator(): translate("未映射") if value is None else value,
+                    key=f"mapping_{file_key}_{ord(delimiter)}_{header}_{field}",
+                )
+                if selected_col is not None:
+                    mapping[field] = selected_col
         try:
             hits = session_result("blast_mapping", (file_key, delimiter, header, mapping), normalize_hits, raw, mapping)
         except ValueError as exc:
@@ -329,8 +397,9 @@ def blast():
         "header": header,
     }
 
-    if previous and previous["key"] == fingerprint:
-        figures.update(saved_figures)
+    if not previous or previous["key"] != fingerprint:
+        for key in saved_figures:
+            figures.pop(key, None)
     for column, label, value in zip(st.columns(5),
                                     ("原始命中数", "筛选后命中数", "有候选的 Query", "排除记录数", "保留比例"),
                                     (len(hits), len(filtered), len(best), len(hits)-len(filtered),
