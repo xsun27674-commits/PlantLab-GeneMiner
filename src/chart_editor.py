@@ -2,6 +2,7 @@
 
 import json
 from html import escape
+from textwrap import wrap
 import os
 import re
 from dataclasses import asdict, dataclass, replace
@@ -132,6 +133,26 @@ def apply_style(figure, style):
     return fig
 
 
+def fit_query_legend(figure):
+    """Reserve space for all query labels at mobile widths and in static files."""
+    if not figure.layout.showlegend or len(figure.data) < 2:
+        return figure
+    lines = 0
+    for trace in figure.data:
+        chunks = wrap(str(trace.name), width=18, break_on_hyphens=False) or [""]
+        trace.name = "<br>".join(escape(chunk) for chunk in chunks)
+        lines += len(chunks)
+    space = 38 + 16 * lines + 10 * len(figure.data)
+    figure.update_layout(
+        height=figure.layout.height + space,
+        margin_b=figure.layout.margin.b + space,
+        legend=dict(orientation="h", x=0, xanchor="left", y=0, yanchor="bottom",
+                    yref="container", entrywidth=165, entrywidthmode="pixels",
+                    font_size=12, font_family="Noto Sans Mono CJK SC, monospace", maxheight=space),
+    )
+    return figure
+
+
 def static_images_enabled():
     return os.environ.get("GENEMINER_LIGHTWEIGHT_PREVIEW") != "1"
 
@@ -239,6 +260,8 @@ def _chart_panel(key, builder, data, defaults, groupable):
     visible_style = replace(style, title=tr(style.title), x_title=tr(style.x_title),
                             y_title=tr(style.y_title), legend_title=tr(style.legend_title))
     figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
+    if key.startswith("blast_scatter_"):
+        fit_query_legend(figure)
     figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
     st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
     with heading.container():
@@ -250,7 +273,7 @@ def _chart_panel(key, builder, data, defaults, groupable):
                        config={"displaylogo": False, "responsive": True,
                                "modeBarButtonsToRemove": ["toImage"]})
     with preview:
-        components.html(browser_chart(html, filename, style), height=style.height + 66)
+        components.html(browser_chart(html, filename, figure.layout), height=figure.layout.height + 66)
     with st.expander(tr("更多")):
         exports = st.columns(3)
         exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),

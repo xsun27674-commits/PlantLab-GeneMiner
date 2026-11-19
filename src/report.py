@@ -7,6 +7,7 @@ from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches
+from PIL import Image
 
 from src.brand import is_wide_logo, logo
 from src.i18n import tr
@@ -88,7 +89,9 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
     if figures:
         doc.add_heading(label("数据可视化"), level=1)
         for number, (name, image) in enumerate(figures, 1):
-            doc.add_picture(BytesIO(image), width=Inches(6))
+            with Image.open(BytesIO(image)) as picture:
+                width = min(6, 7.5 * picture.width / picture.height)
+            doc.add_picture(BytesIO(image), width=Inches(width))
             doc.paragraphs[-1].paragraph_format.keep_with_next = True
             doc.add_paragraph(f"{text['fig']} {number}  {label(name)}", style="Caption")
     if tables:
