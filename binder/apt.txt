@@ -1,0 +1,5 @@
+fonts-noto-cjk
+libnss3
+libgbm1
+libasound2t64
+libgtk-3-0t64

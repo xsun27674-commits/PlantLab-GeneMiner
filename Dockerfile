@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/*
+ENV BROWSER_PATH=/usr/bin/chromium
+
 WORKDIR /app
 COPY requirements.txt .
 RUN --mount=type=secret,id=pip_ca \
