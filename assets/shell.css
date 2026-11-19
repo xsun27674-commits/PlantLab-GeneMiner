@@ -1,0 +1,105 @@
+[data-testid="stMainBlockContainer"] {
+    padding-top: 4.1rem;
+    padding-inline: clamp(1rem, 3vw, 2.5rem);
+}
+
+[data-testid="stSidebarHeader"] { padding-bottom: .25rem; }
+[data-testid="stSidebarContent"] [data-testid="stSidebarUserContent"] { padding-top: .65rem; }
+
+.st-key-plantlab_sidebar [data-testid="stVerticalBlock"] { gap: .36rem; }
+.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: .25rem 0 .85rem; }
+.plantlab-brand img { width: 37px; height: 42px; object-fit: contain; }
+.plantlab-brand strong { display: block; color: #183d49; font-size: .93rem; }
+.plantlab-brand small { display: block; color: #49695d; font-size: .75rem; }
+
+.st-key-plantlab_sidebar [data-testid="stButton"] button {
+    justify-content: flex-start;
+    text-align: left;
+    min-height: 2.25rem;
+    padding: .30rem .62rem;
+    background: #f7faf8;
+    color: #34483e;
+    border: 1px solid #dfe9e2;
+    border-radius: .5rem;
+    box-shadow: none;
+}
+.st-key-plantlab_sidebar [data-testid="stButton"] button:hover {
+    background: #eaf3ed;
+    border-color: #bcd8c5;
+    color: #164c34;
+}
+.st-key-plantlab_sidebar .st-key-active_nav [data-testid="stButton"] button {
+    background: #d4e9da;
+    border-color: #70ad86;
+    color: #164c34;
+}
+.st-key-plantlab_sidebar [data-testid="stExpander"] details { border: 0; }
+.st-key-plantlab_sidebar [data-testid="stExpander"] summary { padding: .35rem 0; }
+.st-key-plantlab_sidebar [data-testid="stExpander"] summary > span {
+    display: flex;
+    flex-direction: row-reverse;
+    width: 100%;
+}
+.st-key-plantlab_sidebar [data-testid="stExpander"] summary > span > div { flex: 1; }
+[data-testid="stAppDeployButton"] { display: none; }
+.st-key-plantlab_sidebar [data-testid="stExpanderDetails"] { padding: 0 0 .25rem; }
+
+.st-key-plantlab_toolbar [data-testid="stHorizontalBlock"] { justify-content: flex-end; gap: .5rem; }
+.st-key-plantlab_toolbar [data-testid="stPopoverButton"],
+.st-key-plantlab_toolbar [data-baseweb="select"] > div {
+    min-height: 2.38rem;
+    border: 1px solid #dfe9e2;
+    border-radius: .55rem;
+    background: #f7faf8;
+}
+
+.st-key-home_intro {
+    max-width: 1040px;
+    margin: .25rem auto 0;
+    border: 1px solid #ddece2;
+    border-radius: 1.4rem;
+    background: #f3f9f5;
+    padding: clamp(1.2rem, 4vw, 3.8rem);
+}
+.st-key-home_intro [data-testid="stHorizontalBlock"] { align-items: center; gap: clamp(1rem, 4vw, 3rem); }
+.plantlab-hero h1 {
+    margin: 0 0 .6rem;
+    color: #153d54;
+    font-size: clamp(1.85rem, 4.6vw, 3.45rem);
+    font-weight: 730;
+    letter-spacing: -.045em;
+    overflow-wrap: anywhere;
+}
+.plantlab-hero h2 { color: #255b42; margin: 0 0 .6rem; font-size: clamp(1.05rem, 2vw, 1.45rem); }
+.plantlab-hero p { color: #466559; margin: 0 0 1.25rem; }
+.plantlab-hero-art { display: block; width: min(100%, 345px); height: auto; margin: auto; }
+.st-key-home_start button { background: #176b4d; border-color: #176b4d; padding: .52rem 1rem; }
+.st-key-home_start button:hover { background: #12563e; border-color: #12563e; }
+@media (max-width: 650px) {
+    .plantlab-hero-art { width: min(62%, 210px); }
+}
+
+/* Streamlit wraps its columns according to container size. These two rows
+   have explicit responsive layouts independent of that heuristic. */
+.st-key-home_intro [data-testid="stHorizontalBlock"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+}
+.st-key-home_intro [data-testid="stColumn"],
+.st-key-plantlab_toolbar [data-testid="stColumn"] {
+    width: 100%;
+    min-width: 0;
+}
+.st-key-plantlab_toolbar [data-testid="stHorizontalBlock"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 8rem minmax(0, 10rem);
+    align-items: center;
+}
+.st-key-plantlab_toolbar [data-testid="stColumn"]:nth-last-child(-n + 2) { min-width: 0; }
+@media (max-width: 650px) {
+    [data-testid="stMainBlockContainer"] { padding-top: 3.8rem; }
+    .st-key-home_intro [data-testid="stHorizontalBlock"] { grid-template-columns: minmax(0, 1fr); }
+    .st-key-plantlab_toolbar [data-testid="stHorizontalBlock"] {
+        grid-template-columns: minmax(0, 1fr) 6rem 7rem;
+    }
+}

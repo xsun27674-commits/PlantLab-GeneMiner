@@ -1,6 +1,8 @@
 """Account management and guarded project operations."""
 
+import re
 import sqlite3
+from time import monotonic
 from datetime import datetime, timezone
 from hashlib import sha256
 
@@ -18,6 +20,32 @@ def get_store():
     except (ServiceError, OSError, sqlite3.Error):
         st.warning(tr("账户服务暂不可用。"))
         return None
+
+
+def toolbar_profile():
+    token = st.session_state.get("auth_token")
+    if not token:
+        st.session_state.pop("_toolbar_profile", None)
+        return None
+    fingerprint = sha256(token.encode()).hexdigest()
+    cached = st.session_state.get("_toolbar_profile")
+    if cached and cached[0] == fingerprint and monotonic() < cached[1]:
+        return cached[2]
+    try:
+        store = configured_store()
+        profile = store.profile(token) if store else None
+    except (ServiceError, OSError, sqlite3.Error):
+        return None
+    if profile is None:
+        return None
+    label = str(profile.get("nickname") or profile.get("email") or tr("账户")).strip()[:32]
+    label = re.sub(r"([\\`*_{}\[\]()#+.!|>~:<])", r"\\\1", label)
+    avatar = profile.get("avatar_url")
+    if not isinstance(avatar, str) or not re.fullmatch(r"https://[^\s()<>]+", avatar):
+        avatar = None
+    identity = (label, avatar)
+    st.session_state["_toolbar_profile"] = (fingerprint, monotonic() + 45, identity)
+    return identity
 
 
 def navigate(page):

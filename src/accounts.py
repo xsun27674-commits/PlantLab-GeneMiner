@@ -243,7 +243,12 @@ class SupabaseStore:
 
     def profile(self, token):
         profile = self.request("GET", "/auth/v1/user", token)
-        return {key: profile[key] for key in ("id", "email")}
+        metadata = profile.get("user_metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        return {"id": profile["id"], "email": profile["email"],
+                "nickname": metadata.get("nickname") or metadata.get("full_name") or metadata.get("name"),
+                "avatar_url": metadata.get("avatar_url")}
 
     def delete_account(self, token):
         self.request("POST", "/rest/v1/rpc/delete_geneminer_account", token, {})

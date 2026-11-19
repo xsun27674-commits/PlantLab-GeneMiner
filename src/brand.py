@@ -1,6 +1,8 @@
 """Configurable brand asset with a first-party monogram fallback."""
 
 import os
+from base64 import b64encode
+from functools import lru_cache
 from pathlib import Path
 
 import streamlit as st
@@ -42,6 +44,12 @@ def logo_icon():
         return path
     banner = logo()
     return None if is_wide_logo(banner) else banner
+
+
+@lru_cache(maxsize=1)
+def brand_mark_uri():
+    encoded = b64encode((ASSETS / "plantlab-mark.svg").read_bytes()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
 
 
 def brand_banner():

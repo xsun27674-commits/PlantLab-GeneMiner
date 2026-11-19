@@ -1,25 +1,23 @@
 """Streamlit entry point."""
 
+from pathlib import Path
+
 import streamlit as st
 
 from src import pages
-from src.account_page import account_page, autosave, get_store, workspace_page
+from src.account_page import account_page, autosave, get_store, toolbar_profile, workspace_page
 from src.workspace_state import clear
-from src.brand import help_center, is_wide_logo, logo, logo_icon
+from src.brand import NAME, brand_mark_uri, help_center, logo_icon
 from src.i18n import tr
 from src.alignment_page import alignment_page
 
-st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(icon) if (icon := logo_icon() or logo()) else None, layout="wide")
+st.set_page_config(page_title=NAME, page_icon=str(icon) if (icon := logo_icon()) else "🌱", layout="wide")
+st.html(Path(__file__).resolve().parent / "assets" / "shell.css")
 
-_, language_ui, account_ui = st.columns([5, 1.4, 1])
-language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
-                      key="language")
-sidebar_logo = logo()
-if sidebar_logo:
-    st.sidebar.image(str(sidebar_logo), width="stretch" if is_wide_logo(sidebar_logo) else 66)
-st.sidebar.title("PlantLab-GeneMiner")
-st.sidebar.caption("V3.0")
-st.sidebar.caption("Beta")
+with st.container(key="plantlab_toolbar"):
+    _, language_ui, account_ui = st.columns([6, 1, 1.25], vertical_alignment="center")
+    language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
+                          key="language", label_visibility="collapsed")
 
 navigation = {
     "首页": pages.home,
@@ -46,36 +44,34 @@ if destination:
 page = st.session_state.get("page", "首页")
 
 
-st.html("""
-<style>
-.st-key-active_nav button {
-    background:#edf7f1; color:#176b4d; border:0; border-left:3px solid #176b4d;
-}
-.st-key-home_intro { max-width: 960px; }
-</style>
-""")
-
-
 def show_nav(container, key):
     slot = container.container(key="active_nav") if key == page else container
     slot.button(tr(key), key=f"nav_{key}", width="stretch",
-                     type="secondary" if key == page else "tertiary",
-                     on_click=st.session_state.__setitem__, args=("page", key))
+                on_click=st.session_state.__setitem__, args=("page", key))
 
 
-show_nav(st.sidebar, "首页")
-for group, keys in (
-    ("序列分析", ("FASTA 序列分析", "成对序列比对")),
-    ("候选基因分析", ("BLAST 候选筛选",)),
-    ("结果管理", ("结果可视化", "分析记录与导出", "我的项目")),
+with st.sidebar.container(key="plantlab_sidebar"):
+    st.html(f'<div class="plantlab-brand"><img src="{brand_mark_uri()}" alt="">'
+            f'<div><strong>{NAME}</strong><small>V3.0 · Beta</small></div></div>')
+    show_nav(st, "首页")
+    for group, keys in (
+        ("序列分析", ("FASTA 序列分析", "成对序列比对")),
+        ("候选基因分析", ("BLAST 候选筛选",)),
+        ("结果管理", ("结果可视化", "分析记录与导出", "我的项目")),
+    ):
+        with st.expander(tr(group), expanded=page in keys):
+            for entry in keys:
+                show_nav(st, entry)
+    for entry in ("帮助中心", "关于平台"):
+        show_nav(st, entry)
+
+user = toolbar_profile()
+account_label, account_icon = user if user else (tr("游客"), None)
+with account_ui.popover(
+    f"![ ]({account_icon}) {account_label}" if account_icon else account_label,
+    icon=None if account_icon else ":material/account_circle:", width="stretch",
 ):
-    st.sidebar.caption(tr(group))
-    for entry in keys:
-        show_nav(st.sidebar, entry)
-for entry in ("帮助中心", "关于平台"):
-    show_nav(st.sidebar, entry)
-with account_ui.popover(tr("账户") if st.session_state.get("auth_token") else tr("游客")):
-    if not st.session_state.get("auth_token"):
+    if user is None:
         st.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))
     show_nav(st, "账户")
 

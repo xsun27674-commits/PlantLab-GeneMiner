@@ -1,5 +1,6 @@
 """Chinese Streamlit views for the analysis workflow."""
 
+from html import escape
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
@@ -9,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from src.i18n import display_frame, tr, translator
-from src.brand import brand_banner
+from src.brand import NAME, TAGLINE, brand_banner, brand_mark_uri
 from src.account_page import navigate, save_button
 
 from src import visualization as charts
@@ -68,17 +69,18 @@ def source(kind, extensions):
 
 
 def home():
-    with st.container(border=True, key="home_intro"):
-        brand_banner()
-        st.subheader(tr("植物序列分析与候选基因筛选平台"))
-        for column, label, destination in zip(st.columns(2),
-            ("FASTA 序列分析", "BLAST 候选筛选"), ("FASTA 序列分析", "BLAST 候选筛选")):
-            if column.button(tr(label), width="stretch", type="primary"):
-                navigate(destination)
-    for column, label, destination in zip(st.columns(3),
-        ("使用指南", "模拟教学数据", "关于平台"), ("帮助中心", "帮助中心", "关于平台")):
-        if column.button(tr(label), key=f"home_{label}", type="tertiary"):
-            navigate(destination)
+    with st.container(key="home_intro"):
+        copy, illustration = st.columns([1.45, 1], vertical_alignment="center")
+        with copy:
+            st.html(f"""<div class="plantlab-hero">
+                <h1>{NAME}</h1>
+                <h2>{escape(tr("植物序列分析与候选基因筛选平台"))}</h2>
+                <p>{TAGLINE}</p>
+            </div>""")
+            if st.button(tr("开始使用 →"), key="home_start", type="primary"):
+                navigate("FASTA 序列分析")
+        with illustration:
+            st.html(f'<img class="plantlab-hero-art" src="{brand_mark_uri()}" alt="">')
 
 
 def run_time():
