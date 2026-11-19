@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
+export GENEMINER_LIGHTWEIGHT_PREVIEW=1
 cd "$(dirname "$0")/.."
 python -m streamlit run app.py --server.headless=true --server.address=127.0.0.1 --server.port=8501 &
 exec "$@"

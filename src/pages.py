@@ -10,7 +10,7 @@ import streamlit as st
 
 from src import visualization as charts
 from src.analysis_record import VERSION, build_record
-from src.chart_editor import ChartStyle, chart_panel, image_bytes
+from src.chart_editor import ChartStyle, chart_panel, image_bytes, static_images_enabled
 from src.report import word_report
 from src.blast_utils import (
     COVERAGE, REQUIRED, Thresholds, best_hits, candidate_counts, filter_hits,
@@ -343,8 +343,12 @@ def report_section(record, blast_result):
     background = st.text_area("研究背景", max_chars=5000)
     notes = st.text_area("报告备注", max_chars=5000)
     figures = st.session_state.get("report_figures", {})
-    selected_figures = st.multiselect("插入图表", list(figures), format_func=lambda key: figures[key][0])
-    if not figures:
+    if static_images_enabled():
+        selected_figures = st.multiselect("插入图表", list(figures), format_func=lambda key: figures[key][0])
+    else:
+        selected_figures = []
+        st.caption("轻量预览支持 Word 文字与表格。带图报告请使用本地或 Docker 版本。")
+    if static_images_enabled() and not figures:
         st.caption("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。")
     metrics = {}
     tables = {}

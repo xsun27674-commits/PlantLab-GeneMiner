@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-set -e
-# Use the shared Kaleido browser installation method. Keep analysis available
-# if the Binder builder cannot reach the browser package server.
-kaleido_get_chrome || echo "Kaleido browser unavailable; image exports require Chrome."

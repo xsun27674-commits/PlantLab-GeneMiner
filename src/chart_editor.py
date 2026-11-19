@@ -1,6 +1,7 @@
 """Shared Plotly styling, session registry, and export controls."""
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, replace
 
@@ -123,6 +124,10 @@ def apply_style(figure, style):
     return fig
 
 
+def static_images_enabled():
+    return os.environ.get("GENEMINER_LIGHTWEIGHT_PREVIEW") != "1"
+
+
 def image_bytes(figure, format):
     return pio.to_image(figure, format=format, scale=2 if format == "png" else 1)
 
@@ -206,6 +211,9 @@ def chart_panel(key, builder, data, defaults, groupable=False):
         exports[1].download_button("图表数据 CSV", csv_bytes(data), f"{key}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button("样式 JSON", json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{key}.json", "application/json", key=f"json_{key}")
+        if not static_images_enabled():
+            st.caption("轻量预览提供 HTML、CSV 和 JSON。PNG、SVG 和 PDF 请在本地或 Docker 版本导出。")
+            return
         fmt = st.selectbox("静态图格式", ["png", "svg", "pdf"], key=f"format_{key}")
         asset_key = f"image_{key}"
         signature = (fmt, figure.to_json())

@@ -62,4 +62,4 @@ Docker 配置使用 Python 3.11，并在 `0.0.0.0:7860` 上启动 Streamlit。�
 
 运行 `python -m pytest -q` 检查应用与核心分析逻辑。确认环境具备可用 Chrome 后，使用 `GENEMINER_TEST_IMAGES=1 python -m pytest -q` 一并验证 PNG、SVG、图表 PDF 和 Word 插图。
 
-[打开 V1.1 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v1.1-preview?urlpath=proxy%2F8501%2F)。首次启动可能需要构建容器。预览会话会过期，建议用模拟数据体验。
+[打开 V1.1 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v1.1-preview?urlpath=proxy%2F8501%2F)。首次启动可能需要构建容器。Binder 使用轻量模式，支持交互图表、HTML/CSV/JSON、候选导出及无插图 Word。PNG/SVG/PDF 和 Word 插图可在本地或 Docker 使用。预览会话会过期，建议用模拟数据体验。

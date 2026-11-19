@@ -39,3 +39,22 @@ def test_example_workflow_and_navigation():
 
     page.set_value("分析记录与导出").run()
     assert app.text_input(key="research_项目名称").value == "教学验证"
+
+
+def test_lightweight_preview_keeps_interactive_export(monkeypatch):
+    monkeypatch.setenv("GENEMINER_LIGHTWEIGHT_PREVIEW", "1")
+    app = AppTest.from_file(str(APP), default_timeout=25).run()
+    app.sidebar.radio(key="page").set_value("FASTA 序列分析").run()
+    app.checkbox(key="fasta_example").check().run()
+    app.radio(key="sequence_type").set_value("nucleotide").run()
+    assert not app.exception
+    assert len(app.get("plotly_chart")) == 2
+    assert not any(button.label == "生成静态图" for button in app.button)
+    assert len(app.get("download_button")) == 7
+
+    app.sidebar.radio(key="page").set_value("分析记录与导出").run()
+    assert not app.exception
+    assert not any(widget.label == "插入图表" for widget in app.multiselect)
+    app.button[0].click().run()
+    assert not app.exception
+    assert len(app.get("download_button")) == 2
