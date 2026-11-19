@@ -46,10 +46,11 @@ def logo_icon():
     return None if is_wide_logo(banner) else banner
 
 
-@lru_cache(maxsize=1)
-def brand_mark_uri():
-    encoded = b64encode((ASSETS / "plantlab-mark.svg").read_bytes()).decode("ascii")
-    return f"data:image/svg+xml;base64,{encoded}"
+@lru_cache(maxsize=2)
+def brand_mark_uri(compact=False):
+    suffix, mime = ("png", "image/png") if compact else ("svg", "image/svg+xml")
+    encoded = b64encode((ASSETS / f"plantlab-mark.{suffix}").read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{encoded}"
 
 
 def brand_banner():
@@ -72,8 +73,12 @@ def help_center():
     st.title(tr("帮助中心"))
     from src.pages import DATA, EXAMPLES
     st.subheader(tr("模拟教学数据"))
-    for column, (name, label) in zip(st.columns(2), EXAMPLES.values()):
+    st.caption(tr("模拟教学数据，不代表真实科研结果。"))
+    tips = ("用于 FASTA 序列分析。打开 FASTA 页上传 .fasta 文件。",
+            "用于导入与筛选示例。打开 BLAST 候选筛选页上传 .tsv 文件。")
+    for column, (name, label), tip in zip(st.columns(2), EXAMPLES.values(), tips):
         column.download_button(f"{tr('下载')} {tr(label)}", (DATA / name).read_bytes(), name, "text/plain")
+        column.caption(tr(tip))
     sections = (
         ("FASTA 文件", "每条记录从 > 和序列 ID 开始，随后为核酸或蛋白质序列。导入时请选择类型。"),
         ("BLAST 字段", "pident 是序列一致性百分比，bitscore 是比特得分，E-value 是期望随机命中数，qcovs 是每个 Subject 的查询覆盖度。"),

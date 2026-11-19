@@ -1,7 +1,7 @@
 from io import BytesIO
 
-from docx import Document
-from docx.shared import Inches
+from zipfile import ZipFile
+from docx.shared import Cm
 from PIL import Image
 
 from src import brand
@@ -18,7 +18,10 @@ def test_wide_logo_on_cover_and_square_favicon(tmp_path, monkeypatch):
     assert brand.logo_icon() is None
 
     cover = word_report("Test", "", "", {"软件版本": "3.0.0", "科研信息": {}}, {}, {}, [])
-    assert Document(BytesIO(cover)).inline_shapes[0].width == Inches(4.8)
+    with ZipFile(BytesIO(cover)) as package:
+        header = package.read("word/header1.xml")
+        assert f'cx="{int(Cm(1))}"'.encode() in header
+        assert b"<w:drawing>" not in package.read("word/document.xml")
     icon = tmp_path / "logo-icon.png"
     Image.new("RGB", (64, 64)).save(icon)
     assert brand.logo_icon() == icon

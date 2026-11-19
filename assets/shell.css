@@ -7,8 +7,8 @@
 [data-testid="stSidebarContent"] [data-testid="stSidebarUserContent"] { padding-top: 0; }
 
 .st-key-plantlab_sidebar [data-testid="stVerticalBlock"] { gap: .36rem; }
-.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: 0 0 .7rem; }
-.plantlab-brand img { width: 50px; height: 57px; flex: 0 0 auto; object-fit: contain; }
+.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: -.35rem 0 .65rem; }
+.plantlab-brand img { width: 56px; height: 64px; flex: 0 0 auto; object-fit: contain; }
 .plantlab-brand strong { display: block; color: #183d49; font-size: .88rem; white-space: nowrap; }
 .plantlab-brand small { display: block; color: #49695d; font-size: .75rem; }
 

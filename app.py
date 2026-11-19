@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src import pages
 from src.account_page import account_page, autosave, get_store, toolbar_profile, workspace_page
@@ -42,6 +43,12 @@ destination = st.session_state.pop("next_page", None)
 if destination:
     st.session_state["page"] = destination
 page = st.session_state.get("page", "首页")
+if st.session_state.get("_shown_page") != page:
+    st.session_state["_shown_page"] = page
+    if page == "分析记录与导出":
+        components.html("""<script>
+          parent.document.querySelector('[data-testid="stMain"]')?.scrollTo(0, 0);
+        </script>""", height=0)
 
 
 def show_nav(container, key):
@@ -51,7 +58,7 @@ def show_nav(container, key):
 
 
 with st.sidebar.container(key="plantlab_sidebar"):
-    st.html(f'<div class="plantlab-brand"><img src="{brand_mark_uri()}" alt="">'
+    st.html(f'<div class="plantlab-brand"><img src="{brand_mark_uri(compact=True)}" alt="">'
             f'<div><strong>{NAME}</strong><small>V3.0 · Beta</small></div></div>')
     show_nav(st, "首页")
     for group, keys in (

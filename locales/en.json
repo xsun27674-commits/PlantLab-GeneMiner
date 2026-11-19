@@ -390,5 +390,17 @@
   "下一步：导出分析报告 →": "Next: export report →",
   "下一步：BLAST 候选筛选 →": "Next: BLAST candidate screening →",
   "序列分析已完成 ✓": "Sequence analysis complete ✓",
-  "下一阶段可导入已有 BLAST 比对结果，进行候选筛选。": "Import existing BLAST results to screen candidates in the next stage."
+  "下一阶段可导入已有 BLAST 比对结果，进行候选筛选。": "Import existing BLAST results to screen candidates in the next stage.",
+  "准备交互 HTML": "Prepare interactive HTML",
+  "准备 Word 报告": "Prepare Word report",
+  "自定义范围": "Custom range",
+  "横轴": "X axis",
+  "纵轴": "Y axis",
+  "最小值": "Minimum",
+  "最大值": "Maximum",
+  "仅显示前 N 个类别": "Show only the first N categories",
+  "类别数量": "Number of categories",
+  "模拟教学数据，不代表真实科研结果。": "Simulated teaching data. These files are not research results.",
+  "用于 FASTA 序列分析。打开 FASTA 页上传 .fasta 文件。": "Upload the .fasta file to the FASTA Analysis page.",
+  "用于导入与筛选示例。打开 BLAST 候选筛选页上传 .tsv 文件。": "Upload the .tsv file to the BLAST Screening page to practice importing hits."
 }

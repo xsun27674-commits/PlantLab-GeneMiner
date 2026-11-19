@@ -6,10 +6,10 @@ from io import BytesIO
 from docx import Document
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches
+from docx.shared import Cm, Inches
 from PIL import Image
 
-from src.brand import is_wide_logo, logo
+from src.brand import ASSETS
 from src.i18n import tr
 
 MAX_TABLE_ROWS = 1000
@@ -52,13 +52,13 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
     doc = Document()
     for style in ("Normal", "Title", "Heading 1", "Heading 2", "Caption"):
         doc.styles[style].element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), "宋体")
+    header = doc.sections[0].header.paragraphs[0]
+    header.paragraph_format.space_after = 0
+    header.paragraph_format.keep_with_next = True
+    icon = ASSETS / "plantlab-mark.png"
+    if icon.is_file():
+        header.add_run().add_picture(str(icon), width=Cm(1))
     doc.add_heading(title, 0)
-    try:
-        logo_path = logo()
-        if logo_path:
-            doc.add_picture(str(logo_path), width=Inches(4.8 if is_wide_logo(logo_path) else 0.85))
-    except (OSError, ValueError):
-        pass
     demonstration = any(record.get(group, {}).get("文件来源") == "模拟教学数据" for group in ("FASTA", "BLAST"))
     if demonstration:
         doc.add_heading(label("教学演示报告"), level=2)
@@ -66,9 +66,15 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
     doc.add_paragraph(f"{text['time']} · {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
     doc.add_paragraph(f"{label('软件版本')} · {record['软件版本']}")
     doc.add_heading(label("分析概览"), level=1)
-    for key, value in record["科研信息"].items():
-        if value:
-            doc.add_paragraph(f"{label(key)} · {display(value)}")
+    research = [(label(key), display(value)) for key, value in record["科研信息"].items() if value]
+    if research:
+        info = doc.add_table(rows=0, cols=2)
+        info.style = "Light Shading Accent 1"
+        for name, value in research:
+            row = info.add_row()
+            row._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
+            row.cells[0].text = name
+            row.cells[1].text = value
     if background:
         doc.add_heading(label("研究背景"), level=2)
         doc.add_paragraph(background)

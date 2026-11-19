@@ -84,7 +84,7 @@ def test_static_images_and_document_with_picture():
     assert image_bytes(plot, "pdf").startswith(b"%PDF")
     record = build_record({"项目名称": "植物分析"})
     document = word_report("科研报告", "", "", record, {}, {}, [(style.title, png)])
-    assert len(Document(BytesIO(document)).inline_shapes) == 2
+    assert len(Document(BytesIO(document)).inline_shapes) == 1
 
 
 def test_record_and_word_document():
@@ -100,7 +100,7 @@ def test_record_and_word_document():
                          {"筛选后命中数": 1}, {"候选表": pd.DataFrame({"Query": ["Q01"]})}, [])
     doc = Document(BytesIO(output))
     assert doc.paragraphs[0].text == "植物报告"
-    assert doc.tables[0].rows[1].cells[0].text == "Q01"
+    assert doc.tables[-1].rows[1].cells[0].text == "Q01"
     with ZipFile(BytesIO(output)) as package:
         assert b'PAGE' in package.read("word/footer1.xml")
 
@@ -127,7 +127,7 @@ def test_bilingual_demonstration_report(language, overview, marker):
     document = Document(BytesIO(output))
     paragraphs = {item.text for item in document.paragraphs}
     assert {overview, marker} <= paragraphs
-    assert document.tables[0].rows[0].cells[0].text == ("序列 ID" if language == "zh" else "Sequence ID")
+    assert document.tables[-1].rows[0].cells[0].text == ("序列 ID" if language == "zh" else "Sequence ID")
     with ZipFile(BytesIO(output)) as package:
         table_xml = package.read("word/document.xml")
         assert b"tblHeader" in table_xml and b"cantSplit" in table_xml

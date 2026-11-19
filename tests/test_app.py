@@ -29,6 +29,8 @@ def test_example_workflow_and_navigation():
     app.sidebar.button(key="nav_分析记录与导出").click().run()
     app.text_input(key="research_项目名称").set_value("教学验证").run()
     assert not app.exception
+    assert len(app.get("download_button")) == 3
+    next(button for button in app.button if button.label == "准备 Word 报告").click().run()
     assert len(app.get("download_button")) == 4
 
     app.sidebar.button(key="nav_BLAST 候选筛选").click().run()
@@ -49,12 +51,14 @@ def test_lightweight_preview_keeps_interactive_export(monkeypatch):
     assert not app.exception
     assert len(app.get("iframe")) == 2
     assert not any(button.label == "生成静态图" for button in app.button)
-    assert len(app.get("download_button")) == 7
+    assert len(app.get("download_button")) == 5
 
     app.sidebar.button(key="nav_分析记录与导出").click().run()
     assert not app.exception
     assert not any(widget.label == "插入图表" for widget in app.multiselect)
     assert not app.exception
+    assert len(app.get("download_button")) == 1
+    next(button for button in app.button if button.label == "准备 Word 报告").click().run()
     assert len(app.get("download_button")) == 2
 
 

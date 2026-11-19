@@ -24,6 +24,7 @@ from src.blast_utils import (
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
+from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 EXAMPLES = {
@@ -97,7 +98,7 @@ def sequence_source():
         if not upload or Path(upload[0]).suffix.lower() not in (".csv", ".xlsx"):
             return upload
         name, data, origin = upload
-        rows = read_sequence_table(name, data)
+        rows = session_result("sequence_table", (name, sha256(data).digest()), read_sequence_table, name, data)
         options = list(rows.columns)
         normalized = {str(column).strip().casefold().replace("_", " "): index
                       for index, column in enumerate(options)}
@@ -175,7 +176,7 @@ def fasta():
     name, data, origin = selected
     fingerprint = (name, sha256(data).hexdigest(), origin, sequence_type)
     try:
-        frame = analyze_fasta(data, sequence_type)
+        frame = session_result("fasta_parse", fingerprint, analyze_fasta, data, sequence_type)
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
@@ -237,7 +238,7 @@ def blast():
                                  format_func=lambda value, translate=translator(): translate({"auto": "自动识别", "yes": "有表头", "no": "无表头"}[value]),
                                  key=f"header_{file_key}")
         try:
-            raw = read_blast(data, delimiter, header)
+            raw = session_result("blast_parse", (file_key, delimiter, header), read_blast, data, delimiter, header)
         except ValueError as exc:
             st.error(tr(str(exc)))
             return
@@ -255,7 +256,7 @@ def blast():
             if selected_col is not None:
                 mapping[field] = selected_col
         try:
-            hits = normalize_hits(raw, mapping)
+            hits = session_result("blast_mapping", (file_key, delimiter, header, mapping), normalize_hits, raw, mapping)
         except ValueError as exc:
             st.error(tr(str(exc)))
             return
@@ -296,13 +297,13 @@ def blast():
 
     thresholds = Thresholds(identity, evalue.strip(), length, coverage_field, coverage)
     try:
-        filtered = filter_hits(hits, thresholds)
+        filtered = session_result("blast_filter", (file_key, delimiter, header, mapping, thresholds), filter_hits, hits, thresholds)
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
-    best = best_hits(filtered)
-    counts = candidate_counts(filtered, hits["qseqid"])
     fingerprint = (name, origin, file_key, delimiter, header, mapping, thresholds)
+    best, counts = session_result("blast_count", fingerprint,
+                                  lambda: (best_hits(filtered), candidate_counts(filtered, hits["qseqid"])))
     timestamp = previous["timestamp"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["blast_result"] = {
         "key": fingerprint, "timestamp": timestamp, "name": name, "origin": origin,
@@ -428,64 +429,75 @@ def records():
 
 def report_section(record, blast_result):
     st.subheader(tr("Word 分析报告"))
-    left, right = st.columns(2)
-    language = left.selectbox(tr("报告语言"), ("zh", "en"),
-                              format_func={"zh": "中文报告", "en": "English Report"}.get,
-                              key="report_setting_language")
-    mode = right.selectbox(tr("报告模式"), ("full", "concise"),
-                           format_func=lambda key, translate=translator(): translate("完整版" if key == "full" else "简洁版"),
-                           key="report_setting_mode")
-    title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
-    background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
-    notes = record["科研信息"].get("分析备注", "")
-    figures = st.session_state.get("report_figures", {})
-    if static_images_enabled():
-        selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
-    else:
-        selected_figures = []
-        st.caption(tr("轻量预览支持 Word 文字与表格。带图报告请使用本地或 Docker 版本。"))
-    if static_images_enabled() and not figures:
-        st.caption(tr("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。"))
-    metrics = {}
-    tables = {}
-    if blast_result:
-        hits = blast_result["filtered"]
-        tables = {"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
-                  "最佳命中": blast_result["best"]}
-        total = blast_result["before"]
-        metrics = {"原始命中数": total, "筛选后命中数": len(hits), "保留比例": f"{len(hits)/total:.1%}"}
-        if not hits.empty:
-            coverage_fields = coverage_options(hits)
-            if coverage_fields:
-                coverage = coverage_fields[0]
-                low_coverage = int(((hits["pident"] >= 90) & (hits[coverage] < 50)).sum())
-                metrics[f'{tr("高一致性且低覆盖度命中", language)} (pident ≥ 90%, {coverage} < 50%)'] = low_coverage
-            metrics.update({"一致性中位数（%）": f"{hits['pident'].median():.2f}",
-                            "比对长度中位数": f"{hits['length'].median():g}",
-                            "比特得分中位数": f"{hits['bitscore'].median():g}"})
-    chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
-    try:
-        images = []
-        for key in selected_figures:
-            chart_title, original = figures[key]
-            figure = type(original)(original)
-            figure.update_layout(title_text=tr(chart_title, language))
-            axes = (figure.layout.xaxis, figure.layout.yaxis)
-            source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
-            for axis, label in zip(axes, source_labels):
-                axis.title.text = tr(label, language)
-            images.append((chart_title, image_bytes(figure, "png")))
-        report_title = tr(title.strip() or "PlantLab-GeneMiner 分析报告", language)
-        output = word_report(report_title, background, notes,
-                             record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
-    except Exception:
-        st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
-    else:
-        st.session_state["last_report"] = output
-        st.caption(f'{tr("当前报告已就绪")} · {report_title}')
-        st.download_button(tr("下载 Word 报告"), output, "plantlab_geneminer_report.docx",
+    with st.form("word_report_settings", enter_to_submit=False):
+        left, right = st.columns(2)
+        language = left.selectbox(tr("报告语言"), ("zh", "en"),
+                                  format_func={"zh": "中文报告", "en": "English Report"}.get,
+                                  key="report_setting_language")
+        mode = right.selectbox(tr("报告模式"), ("full", "concise"),
+                               format_func=lambda key, translate=translator(): translate("完整版" if key == "full" else "简洁版"),
+                               key="report_setting_mode")
+        title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
+        background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
+        notes = record["科研信息"].get("分析备注", "")
+        figures = st.session_state.get("report_figures", {})
+        if static_images_enabled():
+            selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
+        else:
+            selected_figures = []
+            st.caption(tr("轻量预览支持 Word 文字与表格。带图报告请使用本地或 Docker 版本。"))
+        if static_images_enabled() and not figures:
+            st.caption(tr("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。"))
+        metrics = {}
+        tables = {}
+        if blast_result:
+            hits = blast_result["filtered"]
+            tables = {"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
+                      "最佳命中": blast_result["best"]}
+            total = blast_result["before"]
+            metrics = {"原始命中数": total, "筛选后命中数": len(hits), "保留比例": f"{len(hits)/total:.1%}"}
+            if not hits.empty:
+                coverage_fields = coverage_options(hits)
+                if coverage_fields:
+                    coverage = coverage_fields[0]
+                    low_coverage = int(((hits["pident"] >= 90) & (hits[coverage] < 50)).sum())
+                    metrics[f'{tr("高一致性且低覆盖度命中", language)} (pident ≥ 90%, {coverage} < 50%)'] = low_coverage
+                metrics.update({"一致性中位数（%）": f"{hits['pident'].median():.2f}",
+                                "比对长度中位数": f"{hits['length'].median():g}",
+                                "比特得分中位数": f"{hits['bitscore'].median():g}"})
+        chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
+        submitted = st.form_submit_button(tr("准备 Word 报告"), type="primary")
+    signature = sha256(repr((record, title, background, notes, language, mode, chosen,
+                             [(key, figures[key][1].to_json()) for key in selected_figures])).encode()).digest()
+    if submitted:
+        try:
+            images = []
+            for key in selected_figures:
+                chart_title, original = figures[key]
+                figure = type(original)(original)
+                figure.update_layout(title_text=tr(chart_title, language))
+                axes = (figure.layout.xaxis, figure.layout.yaxis)
+                source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
+                for axis, label in zip(axes, source_labels):
+                    axis.title.text = tr(label, language)
+                with elapsed("word_images"):
+                    images.append((chart_title, image_bytes(figure, "png")))
+            report_title = tr(title.strip() or "PlantLab-GeneMiner 分析报告", language)
+            with elapsed("word_docx"):
+                output = word_report(report_title, background, notes,
+                                     record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
+        except Exception:
+            st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
+        else:
+            st.session_state["last_report"] = output
+            st.session_state["_prepared_word"] = (signature, report_title, output)
+    prepared = st.session_state.get("_prepared_word")
+    if prepared and prepared[0] == signature:
+        st.caption(f'{tr("当前报告已就绪")} · {prepared[1]}')
+        st.download_button(tr("下载 Word 报告"), prepared[2], "plantlab_geneminer_report.docx",
                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                           on_click="ignore", type="primary", key="current_word_report")
+                           on_click="ignore", key="current_word_report")
+
 
 def about():
     brand_banner()
