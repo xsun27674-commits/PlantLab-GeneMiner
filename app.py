@@ -57,7 +57,7 @@ with st.sidebar.container(key="plantlab_sidebar"):
     for group, keys in (
         ("序列分析", ("FASTA 序列分析", "成对序列比对")),
         ("候选基因分析", ("BLAST 候选筛选",)),
-        ("结果管理", ("结果可视化", "分析记录与导出", "我的项目")),
+        ("结果管理", ("结果可视化", "分析记录与导出")),
     ):
         with st.expander(tr(group), expanded=page in keys):
             for entry in keys:
@@ -74,9 +74,10 @@ with account_ui.popover(
     if user is None:
         st.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))
     show_nav(st, "账户")
+    show_nav(st, "我的项目")
 
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
-prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_")
+prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_")
 controls = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
             "alignment_length", "coverage_cutoff", "project_name", "project_species", "project_target", "workspace_auto"}
 for key in list(st.session_state):

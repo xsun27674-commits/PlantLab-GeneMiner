@@ -1,4 +1,5 @@
 {
+  "行号": "Row",
   "开始使用 →": "Get started →",
   "首页": "Home",
   "FASTA 序列分析": "FASTA analysis",
@@ -367,5 +368,23 @@
   "图片下载失败，请重试。": "Image download failed. Try again.",
   "恢复默认样式": "Restore default style",
   "标题与坐标轴": "Titles and axes",
-  "布局与高级设置": "Layout and advanced controls"
+  "布局与高级设置": "Layout and advanced controls",
+  "序列输入方式": "Sequence input method",
+  "上传文件": "Upload file",
+  "在线表格": "Online table",
+  "序列编号列": "Sequence ID column",
+  "序列内容列": "Sequence column",
+  "输入预览": "Input preview",
+  "序列编号": "Sequence ID",
+  "序列内容": "Sequence",
+  "可从 Excel 复制多行两列，粘贴到表格中。也可使用下方文本入口。": "Paste rows from Excel into the grid or use the text import below.",
+  "粘贴两列文本": "Paste two columns",
+  "每行格式：序列编号、Tab、序列内容": "Each row: sequence ID, Tab, sequence",
+  "导入表格": "Import into table",
+  "分析表格": "Analyze table",
+  "请粘贴最多 5,000 行的两列表格。": "Paste a two-column table with at most 5,000 rows.",
+  "FASTA 分析不会产生 BLAST 命中。请提供外部 BLAST 结果文件。": "FASTA analysis does not produce BLAST hits. Supply results from an external BLAST run.",
+  "下一步：导入 BLAST 结果 →": "Next: import BLAST results →",
+  "下一步：结果可视化 →": "Next: visualizations →",
+  "下一步：导出分析报告 →": "Next: export report →"
 }

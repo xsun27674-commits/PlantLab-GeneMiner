@@ -97,3 +97,9 @@ V3.0 将上传文件（编码在快照中）、分析参数、结果、图表和
 python -m pytest -q
 GENEMINER_TEST_IMAGES=1 python -m pytest -q
 ```
+
+### 批量序列输入与部署验收
+
+FASTA 分析接收 FASTA、UTF-8 CSV 和 XLSX。表格默认识别 `Sequence ID` 与 `Sequence`，也可手动映射两列。在线表格可直接编辑，也可通过「粘贴两列文本」从电子表格导入制表符分隔的数据，然后点击「分析表格」。序列表最多 5,000 行，上传文件最多 10 MB。编号应使用无空格的标识；保留前导零的编号在 Excel 中应存为文本。FASTA 基础分析不会产生 BLAST 命中，下一步需要另行上传外部结果。
+
+面向公众的完整 Beta 可部署为 Docker Space。镜像使用 Python 3.11，安装 Chromium 与 CJK 字体，在 `0.0.0.0:7860` 启动 Streamlit。以 `/_stcore/health` 验证启动，再在独立浏览器会话验证真实上传、图例、PNG/SVG 及嵌图 DOCX。Binder 是无需登录的教学启动入口，首次构建有冷启动时间，Word 导出在其轻量配置下不带图。GitHub 推送不会自动更新外部 Space。

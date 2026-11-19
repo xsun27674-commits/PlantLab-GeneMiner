@@ -15,9 +15,9 @@ from src.blast_utils import Thresholds
 from src.chart_editor import ChartStyle, validate_style
 
 RECORDS = {"fasta_result", "blast_result", "pairwise_result", "pairwise_record", "report_figures",
-           "fasta_source", "blast_source", "last_report", "alignment_fasta"}
+           "fasta_source", "blast_source", "last_report", "alignment_fasta", "sequence_grid_base", "sequence_grid_source"}
 SCALARS = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
-           "alignment_length", "coverage_cutoff", "blast_preset"}
+           "alignment_length", "coverage_cutoff", "blast_preset", "sequence_input_mode"}
 PREFIXES = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_",
             "chart_style_", "chart_defaults_", "report_setting_", "alignment_setting_")
 TYPES = {"ChartStyle": ChartStyle, "Thresholds": Thresholds, "AlignmentResult": AlignmentResult}

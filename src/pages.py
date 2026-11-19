@@ -23,6 +23,7 @@ from src.blast_utils import (
 )
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.fasta_utils import analyze_fasta
+from src.sequence_input import read_sequence_table, table_to_fasta
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 EXAMPLES = {
@@ -87,13 +88,76 @@ def run_time():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def sequence_source():
+    mode = st.radio(tr("序列输入方式"), ("upload", "grid"), key="sequence_input_mode",
+                    format_func={"upload": tr("上传文件"), "grid": tr("在线表格")}.get,
+                    horizontal=True)
+    if mode == "upload":
+        upload = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt", "csv", "xlsx"])
+        if not upload or Path(upload[0]).suffix.lower() not in (".csv", ".xlsx"):
+            return upload
+        name, data, origin = upload
+        rows = read_sequence_table(name, data)
+        options = list(rows.columns)
+        normalized = {str(column).strip().casefold().replace("_", " "): index
+                      for index, column in enumerate(options)}
+        suffix = sha256(data).hexdigest()
+        left, right = st.columns(2)
+        identifier = left.selectbox(tr("序列编号列"), options, key=f"mapping_seqid_{suffix}",
+                                    index=normalized.get("sequence id", normalized.get("序列编号", 0)))
+        sequence = right.selectbox(tr("序列内容列"), options, key=f"mapping_sequence_{suffix}",
+                                   index=normalized.get("sequence", normalized.get("序列内容", 1)))
+        with st.expander(tr("输入预览")):
+            st.dataframe(rows.head(10), hide_index=True)
+        return name, table_to_fasta(rows, identifier, sequence), origin
+
+    st.caption(tr("可从 Excel 复制多行两列，粘贴到表格中。也可使用下方文本入口。"))
+    columns = ("Sequence ID", "Sequence")
+    base = st.session_state.get("sequence_grid_base", pd.DataFrame([["", ""]], columns=columns))
+    revision = st.session_state.get("sequence_grid_revision", 0)
+    edited = st.data_editor(base, num_rows="dynamic", hide_index=True, width="stretch",
+                            column_config={columns[0]: tr("序列编号"), columns[1]: tr("序列内容")},
+                            key=f"sequence_grid_editor_{revision}")
+    with st.expander(tr("粘贴两列文本")):
+        text = st.text_area(tr("每行格式：序列编号、Tab、序列内容"), key="sequence_input_paste",
+                            max_chars=10_000_000)
+        if st.button(tr("导入表格")):
+            pairs = [line.split("\t") for line in text.splitlines() if line.strip()]
+            if pairs and [part.strip().casefold() for part in pairs[0]] in (
+                ["sequence id", "sequence"], ["序列编号", "序列内容"]
+            ):
+                pairs.pop(0)
+            if not pairs or len(pairs) > 5000 or any(len(pair) != 2 for pair in pairs):
+                st.error(tr("请粘贴最多 5,000 行的两列表格。"))
+            else:
+                st.session_state["sequence_grid_base"] = pd.DataFrame(pairs, columns=columns)
+                st.session_state["sequence_grid_revision"] = revision + 1
+                st.rerun()
+    if st.button(tr("分析表格")):
+        canonical = table_to_fasta(edited, *columns, ignore_blank_rows=True)
+        st.session_state["sequence_grid_source"] = ("sequence_table.fasta", canonical, "在线表格")
+        st.session_state["sequence_grid_base"] = edited
+        st.session_state["sequence_grid_revision"] = revision + 1
+        st.rerun()
+    return st.session_state.get("sequence_grid_source")
+
+
+def next_step(label, destination):
+    if st.button(tr(label), key=f"workflow_next_{destination}"):
+        navigate(destination)
+
+
 def fasta():
     st.title(tr("FASTA 序列分析"))
     previous = st.session_state.pop("fasta_result", None)
     figures = st.session_state.setdefault("report_figures", {})
     for chart in ("fasta_length", "fasta_gc"):
         figures.pop(chart, None)
-    selected = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt"])
+    try:
+        selected = sequence_source()
+    except ValueError as exc:
+        st.error(tr(str(exc)))
+        return
     labels = {"nucleotide": "核酸", "protein": "蛋白质"}
     sequence_type = st.radio(tr("序列类型"), labels, index=None, format_func=lambda key, translate=translator(): translate(labels[key]),
                              horizontal=True, key="sequence_type")
@@ -127,12 +191,14 @@ def fasta():
         st.warning(tr("请检查表中标记的重复 ID、非法字符和空序列。"))
     if sequence_type == "nucleotide":
         st.caption(tr("GC 使用 Biopython 的模糊碱基排除规则，S 与 W 按已知 GC 类别计入。无法计算时留空。"))
-    st.dataframe(display_frame(frame), width="stretch", hide_index=True)
+    st.dataframe(display_frame(frame.assign(**{tr("行号"): range(1, len(frame) + 1)})), width="stretch", hide_index=True)
     frame = frame.assign(序列类型=labels[sequence_type])
     plot_distribution(frame, "fasta_length", "序列长度", "序列长度", "序列 ID")
     if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
         plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
     st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(frame.drop(columns="序列类型")), "fasta_statistics.csv", "text/csv")
+    st.caption(tr("FASTA 分析不会产生 BLAST 命中。请提供外部 BLAST 结果文件。"))
+    next_step("下一步：导入 BLAST 结果 →", "BLAST 候选筛选")
 
 
 def coverage_options(hits):
@@ -261,6 +327,7 @@ def blast():
     count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(hits, thresholds), width="stretch", hide_index=True)
+    next_step("下一步：结果可视化 →", "结果可视化")
 
 
 def plot_distribution(frame, key, field, title, id_field):
@@ -291,6 +358,7 @@ def visualization():
                 ChartStyle("各 Query 候选数量", "Query", "候选数量"), groupable=True)
     if hits.empty:
         st.info(tr("当前没有保留的命中可用于分布图。"))
+        next_step("下一步：导出分析报告 →", "分析记录与导出")
         return
     plots = st.tabs(list(map(tr, ["序列一致性", "比对长度", "覆盖度散点"])))
     with plots[0]:
@@ -307,6 +375,7 @@ def visualization():
                         groupable=True)
         else:
             st.info(tr("当前命中没有可用于绘图的覆盖度。"))
+    next_step("下一步：导出分析报告 →", "分析记录与导出")
 
 
 def records():
