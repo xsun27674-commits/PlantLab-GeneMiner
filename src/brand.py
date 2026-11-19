@@ -12,7 +12,6 @@ NAME = "PlantLab-GeneMiner"
 TAGLINE = "Explore Genes. Discover Possibilities."
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
-PLACEHOLDER = ASSETS / "logo-placeholder.png"
 
 
 def image_size(path):

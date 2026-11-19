@@ -70,7 +70,7 @@ Docker 配置使用 Python 3.11，并在 `0.0.0.0:7860` 上启动 Streamlit。�
 
 ### 本地开发与 Docker
 
-使用 Python 3.11 创建虚拟环境，安装 `requirements.txt`，在项目目录执行 `python -m streamlit run app.py`。PNG 和 SVG 可用图表工具栏在浏览器本地生成。服务端 PNG/SVG/PDF 和 Word 插图需要 Chrome/Chromium 与 Kaleido，Docker 已包含浏览器和 CJK 字体：
+使用 Python 3.11 创建虚拟环境，安装 `requirements.txt`，在项目目录执行 `python -m streamlit run app.py`。每张图表卡片可直接在浏览器下载 PNG（2 倍清晰度）或 SVG。服务端 PNG/SVG/PDF 和 Word 插图需要 Chrome/Chromium 与 Kaleido，Docker 已包含浏览器和 CJK 字体：
 
 ```bash
 docker build -t plantlab-geneminer:v3 .
@@ -91,7 +91,7 @@ V3.0 将上传文件（编码在快照中）、分析参数、结果、图表和
 
 ### 教学预览及测试
 
-[打开 V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。Binder 不带生产账户配置，由 Plotly 工具栏导出 PNG/SVG，轻量报告不内嵌图表。Binder 请使用模拟数据。正式在线部署和 Supabase 双设备验收须由所有者配置后验证。
+[打开 V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。Binder 不带生产账户配置，由图表卡片直接导出 PNG/SVG，轻量报告不内嵌图表。Binder 请使用模拟数据。正式在线部署和 Supabase 双设备验收须由所有者配置后验证。
 
 ```bash
 python -m pytest -q

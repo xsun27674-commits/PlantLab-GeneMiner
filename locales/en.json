@@ -359,5 +359,12 @@
   "按类别配色": "Color by category",
   "筛选前颜色": "Before color",
   "筛选后颜色": "After color",
-  "恢复默认配色": "Reset colors"
+  "恢复默认配色": "Reset colors",
+  "柱形统计 BLAST 命中记录。一个 Subject 可对应多条记录。": "Bars count BLAST hit records. A subject may occur in multiple records.",
+  "下载 PNG": "Download PNG",
+  "下载 SVG": "Download SVG",
+  "图片下载失败，请重试。": "Image download failed. Try again.",
+  "恢复默认样式": "Restore default style",
+  "标题与坐标轴": "Titles and axes",
+  "布局与高级设置": "Layout and advanced controls"
 }

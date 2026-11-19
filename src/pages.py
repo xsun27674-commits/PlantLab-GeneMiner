@@ -68,14 +68,13 @@ def source(kind, extensions):
 
 
 def home():
-    brand_banner()
-    st.subheader(tr("植物序列分析与候选基因筛选平台"))
-    if not st.session_state.get("auth_token"):
-        st.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))
-    for column, label, destination in zip(st.columns(2),
-        ("开始新分析", "我的项目"), ("FASTA 序列分析", "我的项目")):
-        if column.button(tr(label), width="stretch"):
-            navigate(destination)
+    with st.container(border=True, key="home_intro"):
+        brand_banner()
+        st.subheader(tr("植物序列分析与候选基因筛选平台"))
+        for column, label, destination in zip(st.columns(2),
+            ("FASTA 序列分析", "BLAST 候选筛选"), ("FASTA 序列分析", "BLAST 候选筛选")):
+            if column.button(tr(label), width="stretch", type="primary"):
+                navigate(destination)
     for column, label, destination in zip(st.columns(3),
         ("使用指南", "模拟教学数据", "关于平台"), ("帮助中心", "帮助中心", "关于平台")):
         if column.button(tr(label), key=f"home_{label}", type="tertiary"):

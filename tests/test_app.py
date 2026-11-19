@@ -25,7 +25,7 @@ def test_example_workflow_and_navigation():
 
     app.sidebar.button(key="nav_结果可视化").click().run()
     assert not app.exception
-    assert len(app.get("plotly_chart")) == 5
+    assert len(app.get("iframe")) == 5
     app.sidebar.button(key="nav_分析记录与导出").click().run()
     app.text_input(key="research_项目名称").set_value("教学验证").run()
     assert not app.exception
@@ -47,7 +47,7 @@ def test_lightweight_preview_keeps_interactive_export(monkeypatch):
     app.checkbox(key="fasta_example").check().run()
     app.radio(key="sequence_type").set_value("nucleotide").run()
     assert not app.exception
-    assert len(app.get("plotly_chart")) == 2
+    assert len(app.get("iframe")) == 2
     assert not any(button.label == "生成静态图" for button in app.button)
     assert len(app.get("download_button")) == 7
 
@@ -67,7 +67,7 @@ def test_language_switch_keeps_fasta_analysis():
     assert not app.exception
     assert app.metric[0].label == "Sequences"
     assert "Sequence ID" in app.dataframe[0].value
-    assert '"title":{"text":"Sequence length"}' in app.get("plotly_chart")[0].proto.spec
+    assert '"title":{"text":"Sequence length"}' in app.get("iframe")[0].proto.srcdoc
     app.selectbox(key="language").set_value("zh").run()
     assert not app.exception
     assert app.metric[0].value == "6"

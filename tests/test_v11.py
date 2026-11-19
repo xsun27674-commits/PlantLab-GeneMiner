@@ -84,7 +84,7 @@ def test_static_images_and_document_with_picture():
     assert image_bytes(plot, "pdf").startswith(b"%PDF")
     record = build_record({"项目名称": "植物分析"})
     document = word_report("科研报告", "", "", record, {}, {}, [(style.title, png)])
-    assert len(Document(BytesIO(document)).inline_shapes) == 1
+    assert len(Document(BytesIO(document)).inline_shapes) == 2
 
 
 def test_record_and_word_document():

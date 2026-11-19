@@ -1,6 +1,7 @@
 """Shared Plotly styling, session registry, and export controls."""
 
 import json
+from html import escape
 import os
 import re
 from dataclasses import asdict, dataclass, replace
@@ -8,13 +9,13 @@ from dataclasses import asdict, dataclass, replace
 import plotly.io as pio
 from plotly.colors import qualitative
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.i18n import tr, translator
 
 from src.export_utils import csv_bytes
 
 PALETTE = tuple(qualitative.Dark24)
-PRESETS = ("教学展示", "科研论文", "自定义")
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,14 @@ def export_filename(value, fallback):
 
 
 def chart_panel(key, builder, data, defaults, groupable=False):
+    with st.container(border=True, key=f"chart_card_{key}"):
+        _chart_panel(key, builder, data, defaults, groupable)
+
+
+def _chart_panel(key, builder, data, defaults, groupable):
+    baseline = defaults
+    heading = st.empty()
+    preview = st.container()
     style_key = f"chart_style_{key}"
     previous_defaults = st.session_state.get(f"chart_defaults_{key}", defaults)
     st.session_state[f"chart_defaults_{key}"] = defaults
@@ -156,15 +165,8 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
     with st.expander(tr("编辑图表")):
-        if key == "blast_comparison" and st.button(tr("恢复默认配色"), key=f"reset_colors_{key}"):
-            defaults = replace(defaults, category_colors=True, before_color="#9BC9B1", after_color="#176B4D")
-            reset_controls(key, defaults)
-        preset = st.selectbox(tr("绘图模板"), PRESETS, index=2, key=f"style_preset_{key}", format_func=translator())
-        if st.button(tr("应用模板"), key=f"style_apply_{key}"):
-            if preset != "自定义":
-                defaults = replace(defaults, font_size=19 if preset == "教学展示" else 13,
-                                   grid=preset == "教学展示", background="#FFFFFF",
-                                   color="#147756" if preset == "教学展示" else "#203C5F")
+        if st.button(tr("恢复默认样式"), key=f"reset_style_{key}"):
+            defaults = baseline
             reset_controls(key, defaults)
         config = st.file_uploader(tr("导入绘图配置 JSON"), type=["json"], key=f"style_file_{key}")
         if config is not None and st.button(tr("恢复样式"), key=f"style_import_{key}"):
@@ -184,10 +186,18 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             "grid": "网格线", "ticks": "显示刻度", "legend": "显示图例",
             "query_colors": "按 Query 分色", "query_palette": "Query 颜色映射（JSON）",
         }
-        controls = st.columns(3)
+        basic = st.container()
+        with st.expander(tr("标题与坐标轴")):
+            axes = st.columns(2)
+        with st.expander(tr("布局与高级设置")):
+            advanced = st.columns(2)
+        trace_type = {trace.type for trace in builder(False).data}
+        basics = {"title", "category_colors", "before_color", "after_color", "color"}
         values = asdict(defaults)
         for index, (field, label) in enumerate(names.items()):
-            control = controls[index % 3]
+            control = basic if field in basics else (
+                axes[index % 2] if field in ("x_title", "y_title", "x_range", "y_range", "ticks")
+                else advanced[index % 2])
             label = tr(label)
             widget_key = f"style_value_{key}_{field}"
             value = values[field]
@@ -195,11 +205,17 @@ def chart_panel(key, builder, data, defaults, groupable=False):
                 continue
             if field in ("query_colors", "query_palette") and not groupable:
                 continue
+            if field == "point_size" and not trace_type.intersection({"scatter", "scattergl"}):
+                continue
+            if field == "bar_gap" and not trace_type.intersection({"bar", "histogram"}):
+                continue
+            if key == "blast_comparison":
+                if field == "color" and values["category_colors"]:
+                    continue
+                if field in ("before_color", "after_color") and not values["category_colors"]:
+                    continue
             if field in ("color", "font_color", "background", "before_color", "after_color"):
-                def update_hex(picker=widget_key, hex_key=f"{widget_key}_hex"):
-                    st.session_state[hex_key] = st.session_state[picker]
-                control.color_picker(label, value, key=widget_key, on_change=update_hex)
-                values[field] = control.text_input(f"{label} HEX", value, key=f"{widget_key}_hex")
+                values[field] = control.color_picker(label, value, key=widget_key)
             elif isinstance(value, bool):
                 values[field] = control.checkbox(label, value, key=widget_key)
             elif isinstance(value, (int, float)):
@@ -225,20 +241,16 @@ def chart_panel(key, builder, data, defaults, groupable=False):
     figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
     figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
     st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
-    with st.expander(tr("导出图片")):
-        filename = export_filename(
-            st.text_input(tr("文件名"), key, max_chars=80, key=f"filename_{key}"), key)
-        scale = st.slider(tr("PNG 倍率"), 1, 3, 2, key=f"scale_{key}")
-        formats = ["png", "svg", "pdf"] if static_images_enabled() else ["png", "svg"]
-        fmt = st.selectbox(tr("图片格式"), formats, key=f"format_{key}")
-        if not static_images_enabled():
-            st.caption(tr("选择 PNG 或 SVG 后，点击图表工具栏的相机图标下载。"))
-    st.plotly_chart(figure, key=f"plot_{key}", width="content", config={
-        "displaylogo": False, "toImageButtonOptions": {
-            "format": fmt if fmt != "pdf" else "png", "filename": filename,
-            "width": style.width, "height": style.height, "scale": scale if fmt != "svg" else 1,
-        },
-    })
+    with heading.container():
+        st.markdown(f"**{escape(visible_style.title)}**")
+        if key == "blast_comparison":
+            st.caption(tr("柱形统计 BLAST 命中记录。一个 Subject 可对应多条记录。"))
+    filename = export_filename(key, "chart")
+    html = pio.to_html(figure, full_html=False, include_plotlyjs=True, div_id="chart",
+                       config={"displaylogo": False, "responsive": True,
+                               "modeBarButtonsToRemove": ["toImage"]})
+    with preview:
+        components.html(browser_chart(html, filename, style), height=style.height + 66)
     with st.expander(tr("更多")):
         exports = st.columns(3)
         exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),
@@ -246,24 +258,44 @@ def chart_panel(key, builder, data, defaults, groupable=False):
         exports[1].download_button(tr("图表数据 CSV"), csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button(tr("样式 JSON"), json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{filename}.json", "application/json", key=f"json_{key}")
-    if static_images_enabled():
-        asset_key = f"image_{key}"
-        signature = (fmt, scale, figure.to_json())
-        if st.button(tr("生成静态图"), key=f"render_{key}"):
-            st.session_state.pop(asset_key, None)
-            try:
-                st.session_state[asset_key] = (signature, image_bytes(figure, fmt, scale if fmt == "png" else 1))
-            except Exception:
-                st.error(tr("静态图生成失败。请确认 Kaleido 和 Chrome/Chromium 可正常运行。"))
-        asset = st.session_state.get(asset_key)
-        if asset and asset[0] == signature:
-            mime = {"png": "image/png", "svg": "image/svg+xml", "pdf": "application/pdf"}[fmt]
-            st.download_button(f"下载 {fmt.upper()}", asset[1], f"{filename}.{fmt}", mime, key=f"image_download_{key}")
+def browser_chart(plot_html, filename, style):
+    buttons = "".join(
+        f'<button type="button" data-format="{kind}">{escape(tr(f"下载 {kind.upper()}"))}</button>'
+        for kind in ("png", "svg")
+    )
+    options = json.dumps({"filename": filename, "width": style.width, "height": style.height})
+    failure = json.dumps(tr("图片下载失败，请重试。"), ensure_ascii=True)
+    return f"""
+<style>
+body {{ margin:0; font:14px system-ui,sans-serif; }}
+.plotly-graph-div {{ max-width:100%; }}
+section {{ display:flex; gap:8px; flex-wrap:wrap; margin:5px 0; }}
+button {{ border:1px solid #bad2c8; border-radius:7px; padding:7px 12px;
+          background:#f5faf7; color:#176b4d; cursor:pointer; }}
+</style>
+{plot_html}
+<section>{buttons}<span role="status"></span></section>
+<script>
+document.querySelectorAll('button[data-format]').forEach(button => {{
+  button.addEventListener('click', async () => {{
+    const status = document.querySelector('[role="status"]');
+    const format = button.dataset.format;
+    button.disabled = true;
+    status.textContent = '';
+    try {{
+      await Plotly.downloadImage(document.getElementById('chart'),
+        {{...{options}, format, scale: format === 'png' ? 2 : 1}});
+    }} catch (error) {{
+      status.textContent = {failure};
+    }} finally {{
+      button.disabled = false;
+    }}
+  }});
+}});
+</script>"""
 
 
 def reset_controls(key, style):
     for field, value in asdict(style).items():
         widget_key = f"style_value_{key}_{field}"
         st.session_state[widget_key] = value
-        if field in ("color", "font_color", "background", "before_color", "after_color"):
-            st.session_state[f"{widget_key}_hex"] = value
