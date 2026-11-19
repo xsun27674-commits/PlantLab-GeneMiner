@@ -103,3 +103,7 @@
         grid-template-columns: minmax(0, 1fr) 6rem 7rem;
     }
 }
+
+[data-test-script-state="running"] .st-key-current_word_report button {
+    visibility: hidden;
+}

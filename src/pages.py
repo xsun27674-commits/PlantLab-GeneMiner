@@ -466,15 +466,17 @@ def report_section(record, blast_result):
             for axis, label in zip(axes, source_labels):
                 axis.title.text = tr(label, language)
             images.append((chart_title, image_bytes(figure, "png")))
-        output = word_report(tr(title.strip() or "PlantLab-GeneMiner 分析报告", language), background, notes,
+        report_title = tr(title.strip() or "PlantLab-GeneMiner 分析报告", language)
+        output = word_report(report_title, background, notes,
                              record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
     except Exception:
         st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
     else:
         st.session_state["last_report"] = output
+        st.caption(f'{tr("当前报告已就绪")} · {report_title}')
         st.download_button(tr("下载 Word 报告"), output, "plantlab_geneminer_report.docx",
                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                           on_click="ignore", type="primary")
+                           on_click="ignore", type="primary", key="current_word_report")
 
 def about():
     brand_banner()
