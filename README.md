@@ -63,3 +63,37 @@ Docker 配置使用 Python 3.11，并在 `0.0.0.0:7860` 上启动 Streamlit。�
 运行 `python -m pytest -q` 检查应用与核心分析逻辑。确认环境具备可用 Chrome 后，使用 `GENEMINER_TEST_IMAGES=1 python -m pytest -q` 一并验证 PNG、SVG、图表 PDF 和 Word 插图。
 
 [打开 V1.1 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v1.1-preview?urlpath=proxy%2F8501%2F)。首次启动可能需要构建容器。Binder 使用轻量模式，支持交互图表、HTML/CSV/JSON、候选导出及无插图 Word。PNG/SVG/PDF 和 Word 插图可在本地或 Docker 使用。预览会话会过期，建议用模拟数据体验。
+
+## V3.0
+
+游客可直接运行 FASTA 质检、成对序列比对和 BLAST 结果筛选，游客会话不会自动长期保存。可切换中文和英文界面，报告可独立选择中文或英文、简洁或完整模式。报告中的相似性指标只描述输入和筛选结果，不能证明基因功能或直系同源关系。
+
+### 本地开发与 Docker
+
+使用 Python 3.11 创建虚拟环境，安装 `requirements.txt`，在项目目录执行 `python -m streamlit run app.py`。PNG 和 SVG 可用图表工具栏在浏览器本地生成。服务端 PNG/SVG/PDF 和 Word 插图需要 Chrome/Chromium 与 Kaleido，Docker 已包含浏览器和 CJK 字体：
+
+```bash
+docker build -t plantlab-geneminer:v3 .
+docker run --rm -p 7860:7860 plantlab-geneminer:v3
+```
+
+使用 `GENEMINER_DEV_DB=/absolute/private/path/development.sqlite3` 可启用开发账户和持久化项目。该模式供本机调试，不具备公共运营需要的邮件确认、反滥用和限流。不要对互联网启用。备份开发数据库时同时保护其文件及相关卷。通过 `GENEMINER_LOGO_PATH` 指向正式 PNG，可替换站点及 Word 使用的项目占位图。
+
+### 正式部署及数据存储
+
+1. 在专用 Supabase 项目运行 [deploy/supabase.sql](deploy/supabase.sql)。确认 Email Auth 已启用，开启邮件确认，配置站点 URL、邮件发送服务、密码和速率限制。密码重置模板使用 `{{ .TokenHash }}` 给用户显示一次性的凭证，用户可在「账户 → 忘记密码」提交凭证与新密码。上线前验证注册确认和密码重置邮件。
+2. 在 Hugging Face 创建 Docker Space，上传项目文件。在 Space 的 Variables / Secrets 中设置 `GENEMINER_SUPABASE_URL` 和 `GENEMINER_SUPABASE_PUBLIC_KEY`。使用 HTTPS 项目地址及 publishable 或 legacy anon 客户端密钥，禁止使用 service role。让 Docker 在 7860 端口监听。Space 无需持久磁盘来保存科研项目。
+3. 使用两个浏览器及两个账户验收。账户 A 保存后，在另一浏览器用 A 登录并恢复；用 B 登录，确认无法读写或删除 A 的项目。再验证账户删除、图像下载及 Word 插图。正式部署前核对供应商费用、服务区域、备份保留期和研究数据条款。关闭开发数据库变量。
+
+项目表为 `public.geneminer_projects`。记录 UUID 项目 ID、`auth.users` 所有者、名称、物种、目标、分析状态、创建和修改时间、版本化 JSON 快照。账户的删除通过受限 RPC 执行，外键级联删除项目。PostgreSQL 使用 RLS 检查当前 JWT 的 `auth.uid()`。SQLite 开发库用服务器会话校验并按所有者查询。Supabase 按服务配置的备份周期保留备份。
+
+V3.0 将上传文件（编码在快照中）、分析参数、结果、图表和报告原子地保存在访问隔离的 PostgreSQL 行中。单项目快照限 32 MiB，未配置独立对象存储。自动保存可选，每两分钟检查现有项目，跳过未改动的快照。改动时写入整份快照，多设备同时编辑为最后成功保存者生效。应用使用经过校验的 JSON 恢复状态，不反序列化可执行对象。Supabase 登录凭证留在服务器会话，访问令牌到期后须重新登录。
+
+### 教学预览及测试
+
+[打开 V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。Binder 不带生产账户配置，由 Plotly 工具栏导出 PNG/SVG，轻量报告不内嵌图表。Binder 请使用模拟数据。正式在线部署和 Supabase 双设备验收须由所有者配置后验证。
+
+```bash
+python -m pytest -q
+GENEMINER_TEST_IMAGES=1 python -m pytest -q
+```

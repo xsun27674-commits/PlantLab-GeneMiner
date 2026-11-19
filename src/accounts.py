@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import uuid4
 
 MAX_PROJECT_BYTES = 32 * 1024 * 1024
@@ -35,12 +35,21 @@ def digest(password, salt):
     return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 600_000)
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+SUPABASE_HTTP = build_opener(NoRedirect)
+
+
 class DevelopmentStore:
     """Explicitly enabled server-side development store, backed by a real file."""
 
     def __init__(self, path):
         self.path = str(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).touch(mode=0o600, exist_ok=True)
         with self.connection() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS accounts (
@@ -197,7 +206,7 @@ class SupabaseStore:
         data = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
         request = Request(self.endpoint + path, data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=20) as response:
+            with SUPABASE_HTTP.open(request, timeout=20) as response:
                 raw = response.read(MAX_PROJECT_BYTES + 2 * 1024 * 1024)
                 return json.loads(raw) if raw else None
         except HTTPError as exc:

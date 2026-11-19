@@ -165,7 +165,13 @@ def workspace_page():
                 row = store.load(token, selected["id"])
                 state = restore(row["payload"])
                 st.session_state["workspace_pending"] = (row, state)
-                navigate("我的项目")
+                destination = next(
+                    (page for key, page in (("blast_result", "BLAST 候选筛选"),
+                                             ("fasta_result", "FASTA 序列分析"),
+                                             ("pairwise_record", "成对序列比对")) if state.get(key)),
+                    "分析记录与导出",
+                )
+                navigate(destination)
             updated_name = st.text_input(tr("重命名为"), max_chars=200)
             if st.button(tr("重命名项目"), disabled=not updated_name.strip()):
                 store.rename(token, selected["id"], updated_name.strip())

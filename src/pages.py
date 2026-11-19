@@ -167,10 +167,10 @@ def blast():
     with st.expander(tr("表格格式与字段映射"), expanded=True):
         left, right = st.columns(2)
         delimiter = left.selectbox(tr("分隔符"), ["\t", ","], index=int(name.lower().endswith(".csv")),
-                                   format_func={"\t": "制表符（TSV）", ",": "逗号（CSV）"}.get,
+                                   format_func=lambda value, translate=translator(): translate({"\t": "制表符（TSV）", ",": "逗号（CSV）"}[value]),
                                    key=f"delimiter_{file_key}")
         header = right.selectbox(tr("表头"), ["auto", "yes", "no"],
-                                 format_func={"auto": "自动识别", "yes": "有表头", "no": "无表头"}.get,
+                                 format_func=lambda value, translate=translator(): translate({"auto": "自动识别", "yes": "有表头", "no": "无表头"}[value]),
                                  key=f"header_{file_key}")
         try:
             raw = read_blast(data, delimiter, header)
@@ -185,7 +185,7 @@ def blast():
         for index, field in enumerate((*REQUIRED, *COVERAGE)):
             selected_col = columns[index % 4].selectbox(
                 field, options, index=options.index(suggested.get(field)),
-                format_func=lambda value: "未映射" if value is None else value,
+                format_func=lambda value, translate=translator(): translate("未映射") if value is None else value,
                 key=f"mapping_{file_key}_{ord(delimiter)}_{header}_{field}",
             )
             if selected_col is not None:
@@ -219,7 +219,7 @@ def blast():
         left, right = st.columns(2)
         coverage_field = left.selectbox(
             tr("Query coverage 筛选字段"), [None, *fields],
-            format_func=lambda value: "不按覆盖度筛选" if value is None else value,
+            format_func=lambda value, translate=translator(): translate("不按覆盖度筛选") if value is None else value,
             key=f"coverage_{file_key}_{fields}",
         )
         cutoff = right.number_input(tr("查询序列覆盖度最低值（%）"), 0.0, 100.0, 0.0, step=1.0,
@@ -259,7 +259,7 @@ def blast():
     result_tab, best_tab, count_tab = st.tabs(list(map(tr, ["筛选结果", "最佳命中", "各 Query 候选数"])))
     result_tab.caption(tr("点击表头按任一指标排序。E-value 按原始文本保留；可用下拉列表按数值排序。"))
     sort_field = result_tab.selectbox(tr("候选比较排序"), [None, "bitscore", "pident", "length", "evalue", *fields],
-                                      format_func=lambda field: field or "输入顺序")
+                                      format_func=lambda field, translate=translator(): field or translate("输入顺序"))
     compared = filtered if sort_field is None else filtered.sort_values(
         sort_field, ascending=sort_field == "evalue",
         key=lambda values: values.map(parse_evalue) if sort_field == "evalue" else values,
@@ -293,7 +293,7 @@ def visualization():
         st.info(tr("请先在 BLAST 候选筛选页载入表格并完成筛选。"))
         return
     hits = result["filtered"]
-    st.caption(f'{result["name"]} · {result["origin"]} · 当前筛选结果')
+    st.caption(f'{result["name"]} · {tr(result["origin"])} · {tr("当前筛选结果")}')
     comparison = pd.DataFrame({"阶段": ["筛选前", "筛选后"], "命中数量": [result["before"], len(hits)]})
     chart_panel("blast_comparison", lambda _: charts.hit_comparison(result["before"], len(hits)), comparison,
                 ChartStyle("筛选前后命中数量", "阶段", "命中数量", legend=False))
@@ -404,6 +404,7 @@ def report_section(record, blast_result):
         else:
             st.session_state["last_report"] = output
     if stored_report := st.session_state.get("last_report"):
+        st.caption(tr("保存的分析报告"))
         st.download_button(tr("下载 Word 报告"), stored_report, "plantlab_geneminer_report.docx",
                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                            on_click="ignore")
