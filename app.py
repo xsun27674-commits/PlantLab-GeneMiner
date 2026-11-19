@@ -3,6 +3,8 @@
 import streamlit as st
 
 from src import pages
+from src.account_page import account_page, autosave, get_store, workspace_page
+from src.workspace_state import clear
 from src.brand import help_center, logo
 from src.i18n import tr
 from src.alignment_page import alignment_page
@@ -26,15 +28,31 @@ navigation = {
     "分析记录与导出": pages.records,
     "关于平台": pages.about,
     "帮助中心": help_center,
+    "账户": account_page,
+    "我的项目": workspace_page,
 }
+pending = st.session_state.pop("workspace_pending", None)
+if pending:
+    row, state = pending
+    clear(st.session_state)
+    st.session_state.update(state)
+    st.session_state.update(workspace_id=row["id"], project_name=row["name"],
+                            project_species=row["species"], project_target=row["target"])
+destination = st.session_state.pop("next_page", None)
+if destination:
+    st.session_state["page"] = destination
 page = st.sidebar.radio(tr("页面导航"), navigation, key="page", format_func=tr)
 
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
-prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_")
+prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_")
 controls = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
-            "alignment_length", "coverage_cutoff"}
+            "alignment_length", "coverage_cutoff", "project_name", "project_species", "project_target", "workspace_auto"}
 for key in list(st.session_state):
     if key in controls or key.startswith(prefixes):
         st.session_state[key] = st.session_state[key]
 
 navigation[page]()
+if page not in ("账户", "我的项目") and st.session_state.get("workspace_auto") and st.session_state.get("auth_token"):
+    if store := get_store():
+        with st.sidebar:
+            autosave(store, st.session_state["auth_token"])

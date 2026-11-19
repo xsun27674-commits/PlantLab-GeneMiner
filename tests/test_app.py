@@ -55,6 +55,6 @@ def test_lightweight_preview_keeps_interactive_export(monkeypatch):
     app.sidebar.radio(key="page").set_value("分析记录与导出").run()
     assert not app.exception
     assert not any(widget.label == "插入图表" for widget in app.multiselect)
-    app.button[0].click().run()
+    next(button for button in app.button if button.label == "生成 Word 报告").click().run()
     assert not app.exception
     assert len(app.get("download_button")) == 2

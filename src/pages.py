@@ -10,6 +10,7 @@ import streamlit as st
 
 from src.i18n import display_frame, tr
 from src.brand import brand_banner
+from src.account_page import save_button
 
 from src import visualization as charts
 from src.analysis_record import VERSION, build_record
@@ -324,6 +325,7 @@ def records():
     blast_result = st.session_state.get("blast_result")
     pairwise_record = st.session_state.get("pairwise_record")
     record = build_record(metadata, fasta_result, blast_result, pairwise_record)
+    save_button()
     st.subheader(tr("当前分析记录"))
     st.json(record, expanded=1)
     st.download_button(tr("下载分析记录 JSON"), json_bytes(record), "analysis.json", "application/json")
@@ -342,9 +344,9 @@ def records():
 
 def report_section(record, blast_result):
     st.subheader(tr("Word 分析报告"))
-    title = st.text_input(tr("报告标题"), "PlantLab-GeneMiner 分析报告", max_chars=200)
-    background = st.text_area(tr("研究背景"), max_chars=5000)
-    notes = st.text_area(tr("报告备注"), max_chars=5000)
+    title = st.text_input(tr("报告标题"), "PlantLab-GeneMiner 分析报告", max_chars=200, key="report_setting_title")
+    background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
+    notes = st.text_area(tr("报告备注"), max_chars=5000, key="report_setting_notes")
     figures = st.session_state.get("report_figures", {})
     if static_images_enabled():
         selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: figures[key][0])
