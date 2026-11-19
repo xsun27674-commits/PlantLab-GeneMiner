@@ -5,16 +5,17 @@ import streamlit as st
 from src import pages
 from src.account_page import account_page, autosave, get_store, workspace_page
 from src.workspace_state import clear
-from src.brand import help_center, logo
+from src.brand import help_center, is_wide_logo, logo, logo_icon
 from src.i18n import tr, translator
 from src.alignment_page import alignment_page
 
-st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(logo()), layout="wide")
+st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(logo_icon()), layout="wide")
 
 _, language_ui = st.columns([5, 1])
 language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
                       key="language")
-st.sidebar.image(str(logo()), width=66)
+sidebar_logo = logo()
+st.sidebar.image(str(sidebar_logo), width="stretch" if is_wide_logo(sidebar_logo) else 66)
 st.sidebar.title("PlantLab-GeneMiner")
 st.sidebar.caption("V3.0")
 st.sidebar.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))

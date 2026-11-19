@@ -4,23 +4,53 @@ import os
 from pathlib import Path
 
 import streamlit as st
+from PIL import Image
 
 from src.i18n import tr
 
 NAME = "PlantLab-GeneMiner"
 TAGLINE = "Explore Genes. Discover Possibilities."
 ROOT = Path(__file__).resolve().parents[1]
-PLACEHOLDER = ROOT / "assets" / "logo-placeholder.png"
+ASSETS = ROOT / "assets"
+PLACEHOLDER = ASSETS / "logo-placeholder.png"
+
+
+def image_size(path):
+    try:
+        with Image.open(path) as image:
+            if image.format == "PNG":
+                return image.size
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def logo():
-    path = Path(os.environ.get("GENEMINER_LOGO_PATH", str(PLACEHOLDER)))
-    return path if path.is_file() else PLACEHOLDER
+    path = Path(os.environ.get("GENEMINER_LOGO_PATH") or ASSETS / "logo.png")
+    return path if image_size(path) else PLACEHOLDER
+
+
+def is_wide_logo(path):
+    size = image_size(path)
+    return bool(size and size[0] >= 1.4 * size[1])
+
+
+def logo_icon():
+    path = Path(os.environ.get("GENEMINER_LOGO_ICON_PATH") or ASSETS / "logo-icon.png")
+    if image_size(path) and not is_wide_logo(path):
+        return path
+    banner = logo()
+    return PLACEHOLDER if is_wide_logo(banner) else banner
 
 
 def brand_banner():
+    path = logo()
+    if is_wide_logo(path):
+        st.image(str(path), width=720, caption=NAME)
+        st.caption(TAGLINE)
+        return
     left, right = st.columns([1, 7])
-    left.image(str(logo()), width=90)
+    left.image(str(path), width=90)
     right.title(NAME)
     right.caption(TAGLINE)
 

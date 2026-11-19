@@ -8,7 +8,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches
 
-from src.brand import logo
+from src.brand import is_wide_logo, logo
 from src.i18n import tr
 
 MAX_TABLE_ROWS = 1000
@@ -53,7 +53,8 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
         doc.styles[style].element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), "宋体")
     doc.add_heading(title, 0)
     try:
-        doc.add_picture(str(logo()), width=Inches(0.85))
+        logo_path = logo()
+        doc.add_picture(str(logo_path), width=Inches(4.8 if is_wide_logo(logo_path) else 0.85))
     except (OSError, ValueError):
         pass
     demonstration = any(record.get(group, {}).get("文件来源") == "模拟教学数据" for group in ("FASTA", "BLAST"))
