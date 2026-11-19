@@ -6,8 +6,10 @@ import os
 import re
 from dataclasses import asdict, dataclass, replace
 from math import ceil
+from pathlib import Path
 from unicodedata import east_asian_width
 
+import plotly
 import plotly.io as pio
 from plotly.colors import qualitative
 import streamlit as st
@@ -16,8 +18,13 @@ import streamlit.components.v1 as components
 from src.i18n import tr, translator
 
 from src.export_utils import csv_bytes
+from src.timing import elapsed
 
 PALETTE = tuple(qualitative.Dark24)
+PLOTLY_ASSETS = components.declare_component(
+    "plotly_assets", path=str(Path(plotly.__file__).parent / "package_data"),
+)
+PLOTLY_SCRIPT = "./component/src.chart_editor.plotly_assets/plotly.min.js"
 
 
 @dataclass(frozen=True)
@@ -46,12 +53,13 @@ class ChartStyle:
     after_color: str = "#176B4D"
     x_range: str = ""
     y_range: str = ""
+    category_limit: int = 0
 
 
 def axis_range(value):
     if not value.strip():
         return None
-    bounds = tuple(float(item) for item in value.split(","))
+    bounds = tuple(float(item) for item in value.strip().removeprefix("(").removesuffix(")").split(","))
     if len(bounds) != 2 or not -1e100 < bounds[0] < bounds[1] < 1e100:
         raise ValueError("坐标轴范围请输入递增的两个有限数值，用逗号分隔。")
     return bounds
@@ -90,6 +98,8 @@ def validate_style(style):
             raise ValueError("标题或坐标轴配置无效。")
     if any(type(value) is not bool for value in (style.grid, style.ticks, style.legend, style.query_colors)):
         raise ValueError("图表开关须使用布尔值。")
+    if type(style.category_limit) is not int or style.category_limit < 0:
+        raise ValueError("分类轴类别数量无效。")
     query_palette(style.query_palette)
     axis_range(style.x_range)
     axis_range(style.y_range)
@@ -121,16 +131,17 @@ def apply_style(figure, style):
         title_text=style.title, font_size=style.font_size, font_color=style.font_color,
         width=style.width, height=style.height, bargap=style.bar_gap,
         font_family="Noto Sans CJK SC, Microsoft YaHei, sans-serif",
-        margin=dict.fromkeys(("l", "r", "t", "b"), style.margin),
+        margin=dict(l=max(72, style.margin), r=max(28, style.margin),
+                    t=max(48, style.margin), b=max(66, style.margin)),
         paper_bgcolor=style.background, plot_bgcolor=style.background,
         showlegend=style.legend, legend_title_text=style.legend_title,
     )
     for update, title, limits in (
-        (fig.update_xaxes, style.x_title, style.x_range),
+        (fig.update_xaxes, style.x_title, "" if categories_on_x(fig) else style.x_range),
         (fig.update_yaxes, style.y_title, style.y_range),
     ):
         update(title_text=title, showgrid=style.grid, showticklabels=style.ticks,
-               ticks="outside" if style.ticks else "", range=axis_range(limits))
+               ticks="outside" if style.ticks else "", range=axis_range(limits), title_standoff=14)
     return fig
 
 
@@ -147,16 +158,42 @@ def label_lines(value, width=18):
     return [*lines, line]
 
 
-def fit_category_axis(figure):
-    """Choose readable ticks while retaining every plotted point."""
+def categories_on_x(figure):
     axis = figure.layout.xaxis
-    if axis.type not in (None, "category") or not axis.showticklabels:
-        return
+    if axis.type not in (None, "category"):
+        return []
     values = [value for trace in figure.data if getattr(trace, "x", None) is not None
               for value in trace.x]
     if not values or not all(isinstance(value, str) for value in values):
+        return []
+    return list(dict.fromkeys(axis.categoryarray if axis.categoryarray is not None else values))
+
+
+def numeric_range(container, key, label, value, fallback):
+    previous = axis_range(value)
+    enabled = container.checkbox(f"{tr(label)} · {tr('自定义范围')}", value=previous is not None,
+                                 key=f"{key}_enabled")
+    if not enabled:
+        return ""
+    low, high = previous or fallback
+    left, right = container.columns(2)
+    low = left.number_input(tr("最小值"), value=float(low), key=f"{key}_low", format="%.4g")
+    high = right.number_input(tr("最大值"), value=float(high), key=f"{key}_high", format="%.4g")
+    return f"{low},{high}"
+
+
+def fit_category_axis(figure, limit=0):
+    """Choose readable ticks while retaining every plotted point."""
+    axis = figure.layout.xaxis
+    ordered = categories_on_x(figure)
+    if not ordered:
         return
-    ordered = list(dict.fromkeys(axis.categoryarray if axis.categoryarray is not None else values))
+    if limit and limit < len(ordered):
+        figure.update_xaxes(type="category", categoryorder="array", categoryarray=ordered,
+                           range=[-0.5, limit - 0.5])
+        ordered = ordered[:limit]
+    if not axis.showticklabels:
+        return
     source_labels = (figure.layout.meta or {}).get("category_labels", {})
     count = len(ordered)
     angle = 0 if count <= 6 else -50
@@ -201,10 +238,11 @@ def fit_query_legend(figure, width=None):
     figure.update_layout(
         height=figure.layout.height + space,
         margin_b=figure.layout.margin.b + space,
-        legend=dict(orientation="h", x=0.035, xref="container", xanchor="left",
+        legend=dict(orientation="h", x=0.5, xref="container", xanchor="center",
                     y=0.015, yanchor="bottom", yref="container", entrywidth=169,
                     entrywidthmode="pixels", font_size=12,
-                    font_family="Noto Sans Mono CJK SC, monospace", maxheight=space),
+                    font_family="Noto Sans Mono CJK SC, monospace", maxheight=space,
+                    title_text="" if figure.layout.legend.title.text == "Query" else figure.layout.legend.title.text),
     )
     return figure
 
@@ -214,7 +252,8 @@ def static_images_enabled():
 
 
 def image_bytes(figure, format, scale=None):
-    return pio.to_image(figure, format=format, scale=scale or (2 if format == "png" else 1))
+    with elapsed(f"static_export.{format}"):
+        return pio.to_image(figure, format=format, scale=scale or (2 if format == "png" else 1))
 
 
 def export_filename(value, fallback):
@@ -241,7 +280,7 @@ def _chart_panel(key, builder, data, defaults, groupable):
             current = replace(current, **{field: value})
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
-    with st.expander(tr("编辑图表")):
+    with elapsed(f"chart_controls.{key}"), st.expander(tr("编辑图表")):
         if st.button(tr("恢复默认样式"), key=f"reset_style_{key}"):
             defaults = baseline
             reset_controls(key, defaults)
@@ -256,8 +295,7 @@ def _chart_panel(key, builder, data, defaults, groupable):
             "category_colors": "按类别配色", "before_color": "筛选前颜色", "after_color": "筛选后颜色",
             "title": "图表标题", "x_title": "横轴名称", "y_title": "纵轴名称",
             "color": "绘图颜色", "font_color": "字体颜色", "background": "背景颜色",
-            "legend_title": "图例名称", "x_range": "横轴范围（最小,最大）",
-            "y_range": "纵轴范围（最小,最大）", "margin": "边距",
+            "legend_title": "图例名称", "margin": "边距",
             "opacity": "透明度", "font_size": "字体大小", "width": "宽度",
             "height": "高度", "point_size": "散点大小", "bar_gap": "柱间距",
             "grid": "网格线", "ticks": "显示刻度", "legend": "显示图例",
@@ -265,12 +303,27 @@ def _chart_panel(key, builder, data, defaults, groupable):
         }
         basic = st.container()
         with st.expander(tr("标题与坐标轴")):
-            axes = st.columns(2)
+            axes_section = st.container()
+            axes = axes_section.columns(2)
         with st.expander(tr("布局与高级设置")):
             advanced = st.columns(2)
-        trace_type = {trace.type for trace in builder(False).data}
+        base_figure = builder(defaults.query_colors if groupable else False)
+        trace_type = {trace.type for trace in base_figure.data}
         basics = {"title", "category_colors", "before_color", "after_color", "color"}
         values = asdict(defaults)
+        categories = categories_on_x(base_figure)
+        if categories:
+            if axes_section.checkbox(tr("仅显示前 N 个类别"), value=bool(defaults.category_limit),
+                                     key=f"category_limit_enabled_{key}"):
+                values["category_limit"] = axes_section.number_input(
+                    tr("类别数量"), min_value=1, max_value=len(categories),
+                    value=max(1, min(len(categories), defaults.category_limit or 10)),
+                    key=f"category_count_{key}")
+            else:
+                values["category_limit"] = 0
+        else:
+            values["x_range"] = numeric_range(axes_section, f"x_range_{key}", "横轴", defaults.x_range, (0, 100))
+        values["y_range"] = numeric_range(axes_section, f"y_range_{key}", "纵轴", defaults.y_range, (0, 100))
         for index, (field, label) in enumerate(names.items()):
             control = basic if field in basics else (
                 axes[index % 2] if field in ("x_title", "y_title", "x_range", "y_range", "ticks")
@@ -315,8 +368,11 @@ def _chart_panel(key, builder, data, defaults, groupable):
     st.session_state[style_key] = style
     visible_style = replace(style, title=tr(style.title), x_title=tr(style.x_title),
                             y_title=tr(style.y_title), legend_title=tr(style.legend_title))
-    figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
-    fit_category_axis(figure)
+    with elapsed(f"chart_build.{key}"):
+        grouped = style.query_colors if groupable else False
+        source_figure = builder(grouped) if groupable and grouped != defaults.query_colors else base_figure
+        figure = apply_style(source_figure, visible_style)
+    fit_category_axis(figure, style.category_limit)
     figure.update_xaxes(automargin=True)
     figure.update_yaxes(automargin=True)
     figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
@@ -331,15 +387,20 @@ def _chart_panel(key, builder, data, defaults, groupable):
             st.caption(tr("柱形统计 BLAST 命中记录。一个 Subject 可对应多条记录。"))
     filename = export_filename(key, "chart")
     responsive.update_layout(width=None, autosize=True)
-    html = pio.to_html(responsive, full_html=False, include_plotlyjs=True, div_id="chart",
+    html = pio.to_html(responsive, full_html=False, include_plotlyjs=PLOTLY_SCRIPT, div_id="chart",
                        config={"displaylogo": False, "responsive": True,
                                "modeBarButtonsToRemove": ["toImage"]})
     with preview:
         components.html(browser_chart(html, filename, figure.layout), height=responsive.layout.height + 66)
     with st.expander(tr("更多")):
         exports = st.columns(3)
-        exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),
-                                   f"{filename}.html", "text/html", key=f"html_{key}")
+        if exports[0].button(tr("准备交互 HTML"), key=f"prepare_html_{key}"):
+            st.session_state["_prepared_chart_html"] = (
+                key, figure.to_json(), pio.to_html(figure, full_html=True, include_plotlyjs=True))
+        prepared = st.session_state.get("_prepared_chart_html")
+        if prepared and prepared[0] == key and prepared[1] == figure.to_json():
+            exports[0].download_button(tr("交互 HTML"), prepared[2], f"{filename}.html", "text/html",
+                                       key=f"html_{key}", on_click="ignore")
         exports[1].download_button(tr("图表数据 CSV"), csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button(tr("样式 JSON"), json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{filename}.json", "application/json", key=f"json_{key}")
@@ -354,7 +415,7 @@ def browser_chart(plot_html, filename, layout):
     return f"""
 <style>
 body {{ margin:0; font:14px system-ui,sans-serif; }}
-.plotly-graph-div {{ max-width:100%; }}
+.plotly-graph-div {{ max-width:min(100%, {layout.width}px); margin-inline:auto; }}
 section {{ display:flex; gap:8px; flex-wrap:wrap; margin:5px 0; }}
 button {{ border:1px solid #bad2c8; border-radius:7px; padding:7px 12px;
           background:#f5faf7; color:#176b4d; cursor:pointer; }}
@@ -383,6 +444,17 @@ document.querySelectorAll('button[data-format]').forEach(button => {{
 
 
 def reset_controls(key, style):
+    for axis in ("x", "y"):
+        prefix = f"{axis}_range_{key}"
+        bounds = axis_range(getattr(style, f"{axis}_range"))
+        if bounds:
+            st.session_state[f"{prefix}_enabled"] = True
+            st.session_state[f"{prefix}_low"], st.session_state[f"{prefix}_high"] = bounds
+        else:
+            for suffix in ("enabled", "low", "high"):
+                st.session_state.pop(f"{prefix}_{suffix}", None)
+    st.session_state[f"category_limit_enabled_{key}"] = bool(style.category_limit)
+    st.session_state.pop(f"category_count_{key}", None)
     for field, value in asdict(style).items():
         widget_key = f"style_value_{key}_{field}"
         st.session_state[widget_key] = value

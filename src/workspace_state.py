@@ -81,7 +81,8 @@ def restore(payload):
 
 def clear(session):
     for key in list(session):
-        if keeps(key) or key.startswith(("style_value_", "image_", "open_", "workspace_")) or key in {
+        if keeps(key) or key.startswith(("style_value_", "image_", "open_", "workspace_", "_timed_", "_prepared_",
+                                             "x_range_", "y_range_", "category_limit_", "category_count_")) or key in {
             "fasta_upload", "blast_upload", "alignment_upload", "project_name", "project_species", "project_target",
         }:
             session.pop(key, None)
