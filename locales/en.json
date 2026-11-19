@@ -387,5 +387,8 @@
   "FASTA 分析不会产生 BLAST 命中。请提供外部 BLAST 结果文件。": "FASTA analysis does not produce BLAST hits. Supply results from an external BLAST run.",
   "下一步：导入 BLAST 结果 →": "Next: import BLAST results →",
   "下一步：结果可视化 →": "Next: visualizations →",
-  "下一步：导出分析报告 →": "Next: export report →"
+  "下一步：导出分析报告 →": "Next: export report →",
+  "下一步：BLAST 候选筛选 →": "Next: BLAST candidate screening →",
+  "序列分析已完成 ✓": "Sequence analysis complete ✓",
+  "下一阶段可导入已有 BLAST 比对结果，进行候选筛选。": "Import existing BLAST results to screen candidates in the next stage."
 }

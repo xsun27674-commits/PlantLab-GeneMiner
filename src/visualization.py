@@ -65,6 +65,7 @@ def distribution(frame, field, label, id_field, mode="自动", query_colors=Fals
     chart = px.bar if mode == "柱状图" else px.scatter
     figure = chart(points, x="_record", y=field, color=group, labels=labels,
                    hover_data=list(hover), category_orders={"_record": points["_record"].tolist()})
+    figure.update_layout(meta={"category_labels": dict(zip(points["_record"], ids))})
     figure.update_xaxes(type="category")
     figure.update_yaxes(rangemode="tozero")
     return figure

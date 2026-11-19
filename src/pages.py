@@ -142,9 +142,17 @@ def sequence_source():
     return st.session_state.get("sequence_grid_source")
 
 
-def next_step(label, destination):
-    if st.button(tr(label), key=f"workflow_next_{destination}"):
-        navigate(destination)
+def next_step(label, destination, *, status=None, summary=None):
+    with st.container(key="workflow_step"):
+        message, action = st.columns([3, 2], vertical_alignment="center")
+        with message:
+            if status:
+                st.markdown(f"**{tr(status)}**")
+            if summary:
+                st.caption(tr(summary))
+        with action:
+            if st.button(tr(label), key=f"workflow_next_{destination}", type="primary"):
+                navigate(destination)
 
 
 def fasta():
@@ -197,8 +205,9 @@ def fasta():
     if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
         plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
     st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(frame.drop(columns="序列类型")), "fasta_statistics.csv", "text/csv")
-    st.caption(tr("FASTA 分析不会产生 BLAST 命中。请提供外部 BLAST 结果文件。"))
-    next_step("下一步：导入 BLAST 结果 →", "BLAST 候选筛选")
+    next_step("下一步：BLAST 候选筛选 →", "BLAST 候选筛选",
+              status="序列分析已完成 ✓",
+              summary="下一阶段可导入已有 BLAST 比对结果，进行候选筛选。")
 
 
 def coverage_options(hits):

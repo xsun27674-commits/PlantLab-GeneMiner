@@ -2,10 +2,11 @@
 
 import json
 from html import escape
-from textwrap import wrap
 import os
 import re
 from dataclasses import asdict, dataclass, replace
+from math import ceil
+from unicodedata import east_asian_width
 
 import plotly.io as pio
 from plotly.colors import qualitative
@@ -133,22 +134,77 @@ def apply_style(figure, style):
     return fig
 
 
-def fit_query_legend(figure):
-    """Reserve space for all query labels at mobile widths and in static files."""
-    if not figure.layout.showlegend or len(figure.data) < 2:
+def label_lines(value, width=18):
+    """Wrap display text without shortening or rewriting identifiers."""
+    lines, line, used = [], "", 0
+    for character in str(value):
+        cells = 2 if east_asian_width(character) in ("F", "W") else 1
+        if used + cells > width:
+            lines.append(line)
+            line, used = "", 0
+        line += character
+        used += cells
+    return [*lines, line]
+
+
+def fit_category_axis(figure):
+    """Choose readable ticks while retaining every plotted point."""
+    axis = figure.layout.xaxis
+    if axis.type not in (None, "category") or not axis.showticklabels:
+        return
+    values = [value for trace in figure.data if getattr(trace, "x", None) is not None
+              for value in trace.x]
+    if not values or not all(isinstance(value, str) for value in values):
+        return
+    ordered = list(dict.fromkeys(axis.categoryarray if axis.categoryarray is not None else values))
+    source_labels = (figure.layout.meta or {}).get("category_labels", {})
+    count = len(ordered)
+    angle = 0 if count <= 6 else -50
+    # The same ticks must fit the narrow preview as well as the wider export.
+    budget = (4 if count > 3 else 12) if angle == 0 else 14
+    wrapped = {tick: label_lines(source_labels.get(tick, tick), budget) for tick in ordered}
+    if angle:
+        narrow_width = min(320, figure.layout.width) - figure.layout.margin.l - figure.layout.margin.r
+        thickest = max(map(len, wrapped.values()))
+        max_ticks = max(2, min(10, int(narrow_width / (19 * thickest + 3))))
+    else:
+        max_ticks = 6
+    ticks = ordered[::ceil(count / max_ticks)]
+    labels = [wrapped[tick] for tick in ticks]
+    height = max(len(lines) for lines in labels) * 15
+    if angle:
+        height += 75
+    bottom = max(figure.layout.margin.b, height + 40)
+    extra = bottom - figure.layout.margin.b
+    figure.update_layout(height=figure.layout.height + extra, margin_b=bottom)
+    figure.update_xaxes(
+        type="category", tickmode="array", tickvals=ticks,
+        ticktext=["<br>".join(escape(line) for line in lines) for lines in labels],
+        tickangle=angle, tickfont_size=11, title_standoff=12, automargin=True,
+    )
+    figure.update_yaxes(automargin=True)
+
+
+def fit_query_legend(figure, width=None):
+    """Reserve a dedicated bottom legend region, including one column on narrow screens."""
+    if not figure.layout.showlegend or not any(trace.name for trace in figure.data):
         return figure
-    lines = 0
+    entries = []
     for trace in figure.data:
-        chunks = wrap(str(trace.name), width=18, break_on_hyphens=False) or [""]
+        chunks = label_lines(trace.name)
         trace.name = "<br>".join(escape(chunk) for chunk in chunks)
-        lines += len(chunks)
-    space = 38 + 16 * lines + 10 * len(figure.data)
+        if trace.name:
+            entries.append(16 * len(chunks) + 14)
+    columns = max(1, (int(width or figure.layout.width) - 100) // 218)
+    space = 42 + sum(max(entries[start:start + columns])
+                     for start in range(0, len(entries), columns))
     figure.update_layout(
         height=figure.layout.height + space,
         margin_b=figure.layout.margin.b + space,
-        legend=dict(orientation="h", x=0, xanchor="left", y=0, yanchor="bottom",
-                    yref="container", entrywidth=165, entrywidthmode="pixels",
-                    font_size=12, font_family="Noto Sans Mono CJK SC, monospace", maxheight=space),
+        legend=dict(orientation="h", x=0.035, xref="container", xanchor="left",
+                    y=0.015, yanchor="bottom", yref="container", entrywidth=169,
+                    entrywidthmode="pixels", font_size=12,
+                    font_family="Noto Sans Mono CJK SC, monospace", maxheight=space),
     )
     return figure
 
@@ -260,20 +316,26 @@ def _chart_panel(key, builder, data, defaults, groupable):
     visible_style = replace(style, title=tr(style.title), x_title=tr(style.x_title),
                             y_title=tr(style.y_title), legend_title=tr(style.legend_title))
     figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
-    if key.startswith("blast_scatter_"):
-        fit_query_legend(figure)
+    fit_category_axis(figure)
+    figure.update_xaxes(automargin=True)
+    figure.update_yaxes(automargin=True)
     figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
+    responsive = type(figure)(figure)
+    if style.query_colors:
+        fit_query_legend(figure)
+        fit_query_legend(responsive, width=300)
     st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
     with heading.container():
         st.markdown(f"**{escape(visible_style.title)}**")
         if key == "blast_comparison":
             st.caption(tr("柱形统计 BLAST 命中记录。一个 Subject 可对应多条记录。"))
     filename = export_filename(key, "chart")
-    html = pio.to_html(figure, full_html=False, include_plotlyjs=True, div_id="chart",
+    responsive.update_layout(width=None, autosize=True)
+    html = pio.to_html(responsive, full_html=False, include_plotlyjs=True, div_id="chart",
                        config={"displaylogo": False, "responsive": True,
                                "modeBarButtonsToRemove": ["toImage"]})
     with preview:
-        components.html(browser_chart(html, filename, figure.layout), height=figure.layout.height + 66)
+        components.html(browser_chart(html, filename, figure.layout), height=responsive.layout.height + 66)
     with st.expander(tr("更多")):
         exports = st.columns(3)
         exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),
@@ -281,12 +343,13 @@ def _chart_panel(key, builder, data, defaults, groupable):
         exports[1].download_button(tr("图表数据 CSV"), csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button(tr("样式 JSON"), json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{filename}.json", "application/json", key=f"json_{key}")
-def browser_chart(plot_html, filename, style):
+def browser_chart(plot_html, filename, layout):
     buttons = "".join(
         f'<button type="button" data-format="{kind}">{escape(tr(f"下载 {kind.upper()}"))}</button>'
         for kind in ("png", "svg")
     )
-    options = json.dumps({"filename": filename, "width": style.width, "height": style.height})
+    options = json.dumps({"filename": filename, "width": layout.width, "height": layout.height})
+    export_layout = json.dumps({key: layout[key].to_plotly_json() for key in ("margin", "legend")}).replace("<", "\\u003c")
     failure = json.dumps(tr("图片下载失败，请重试。"), ensure_ascii=True)
     return f"""
 <style>
@@ -306,7 +369,8 @@ document.querySelectorAll('button[data-format]').forEach(button => {{
     button.disabled = true;
     status.textContent = '';
     try {{
-      await Plotly.downloadImage(document.getElementById('chart'),
+      const chart = document.getElementById('chart');
+      await Plotly.downloadImage({{data: chart.data, layout: {{...chart.layout, ...{export_layout}}}}},
         {{...{options}, format, scale: format === 'png' ? 2 : 1}});
     }} catch (error) {{
       status.textContent = {failure};

@@ -3,13 +3,13 @@
     padding-inline: clamp(1rem, 3vw, 2.5rem);
 }
 
-[data-testid="stSidebarHeader"] { padding-bottom: .25rem; }
-[data-testid="stSidebarContent"] [data-testid="stSidebarUserContent"] { padding-top: .65rem; }
+[data-testid="stSidebarHeader"] { padding-bottom: 0; }
+[data-testid="stSidebarContent"] [data-testid="stSidebarUserContent"] { padding-top: 0; }
 
 .st-key-plantlab_sidebar [data-testid="stVerticalBlock"] { gap: .36rem; }
-.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: .25rem 0 .85rem; }
-.plantlab-brand img { width: 37px; height: 42px; object-fit: contain; }
-.plantlab-brand strong { display: block; color: #183d49; font-size: .93rem; }
+.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: 0 0 .7rem; }
+.plantlab-brand img { width: 50px; height: 57px; flex: 0 0 auto; object-fit: contain; }
+.plantlab-brand strong { display: block; color: #183d49; font-size: .88rem; white-space: nowrap; }
 .plantlab-brand small { display: block; color: #49695d; font-size: .75rem; }
 
 .st-key-plantlab_sidebar [data-testid="stButton"] button {
@@ -107,3 +107,20 @@
 [data-test-script-state="running"] .st-key-current_word_report button {
     visibility: hidden;
 }
+
+.st-key-workflow_step {
+    padding: .8rem 1rem;
+    background: #f0f8f3;
+    border: 1px solid #dcece2;
+    border-radius: .7rem;
+}
+.st-key-workflow_step [data-testid="stButton"] { display: flex; justify-content: flex-end; }
+.st-key-workflow_step button {
+    min-height: 48px;
+    padding: .6rem 1.2rem;
+    background: #176b4d;
+    border-color: #176b4d;
+    color: white;
+}
+.st-key-workflow_step button p { font-size: 1rem; font-weight: 650; }
+.st-key-workflow_step button:hover { background: #12563e; border-color: #12563e; color: white; }
