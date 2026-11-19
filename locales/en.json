@@ -402,5 +402,8 @@
   "类别数量": "Number of categories",
   "模拟教学数据，不代表真实科研结果。": "Simulated teaching data. These files are not research results.",
   "用于 FASTA 序列分析。打开 FASTA 页上传 .fasta 文件。": "Upload the .fasta file to the FASTA Analysis page.",
-  "用于导入与筛选示例。打开 BLAST 候选筛选页上传 .tsv 文件。": "Upload the .tsv file to the BLAST Screening page to practice importing hits."
+  "用于导入与筛选示例。打开 BLAST 候选筛选页上传 .tsv 文件。": "Upload the .tsv file to the BLAST Screening page to practice importing hits.",
+  "图表类型": "Chart type",
+  "报告类型": "Report type",
+  "项目基本信息": "Project information"
 }

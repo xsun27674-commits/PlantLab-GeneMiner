@@ -25,7 +25,7 @@ def test_example_workflow_and_navigation():
 
     app.sidebar.button(key="nav_结果可视化").click().run()
     assert not app.exception
-    assert len(app.get("iframe")) == 5
+    assert len([frame for frame in app.get("iframe") if "Plotly.newPlot" in frame.proto.srcdoc]) == 3
     app.sidebar.button(key="nav_分析记录与导出").click().run()
     app.text_input(key="research_项目名称").set_value("教学验证").run()
     assert not app.exception

@@ -340,6 +340,7 @@ def blast():
     next_step("下一步：结果可视化 →", "结果可视化")
 
 
+@st.fragment
 def plot_distribution(frame, key, field, title, id_field):
     mode = st.selectbox(f"{tr(title)} · {tr('图形')}", ["自动", "柱状图", "散点图", "直方图"], key=f"chart_mode_{key}", format_func=translator())
     histogram = mode == "直方图" or (mode == "自动" and len(frame) > 20)
@@ -370,12 +371,19 @@ def visualization():
         st.info(tr("当前没有保留的命中可用于分布图。"))
         next_step("下一步：导出分析报告 →", "分析记录与导出")
         return
-    plots = st.tabs(list(map(tr, ["序列一致性", "比对长度", "覆盖度散点"])))
-    with plots[0]:
+    detail_plot(hits)
+    next_step("下一步：导出分析报告 →", "分析记录与导出")
+
+
+@st.fragment
+def detail_plot(hits):
+    selected = st.radio(tr("图表类型"), ("序列一致性", "比对长度", "覆盖度散点"),
+                        horizontal=True, format_func=translator(), key="blast_detail_view")
+    if selected == "序列一致性":
         plot_distribution(hits, "blast_identity", "pident", "序列一致性（%）", "sseqid")
-    with plots[1]:
+    elif selected == "比对长度":
         plot_distribution(hits, "blast_length", "length", "比对长度", "sseqid")
-    with plots[2]:
+    else:
         fields = coverage_options(hits)
         if fields:
             field = st.selectbox(tr("绘图覆盖度字段"), fields, key="chart_coverage")
@@ -385,7 +393,7 @@ def visualization():
                         groupable=True)
         else:
             st.info(tr("当前命中没有可用于绘图的覆盖度。"))
-    next_step("下一步：导出分析报告 →", "分析记录与导出")
+
 
 
 def records():

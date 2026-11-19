@@ -3,12 +3,13 @@
     padding-inline: clamp(1rem, 3vw, 2.5rem);
 }
 
-[data-testid="stSidebarHeader"] { padding-bottom: 0; }
+[data-testid="stMain"] { overflow-anchor: none; }
+[data-testid="stSidebarHeader"] { padding-block: .25rem 0; }
 [data-testid="stSidebarContent"] [data-testid="stSidebarUserContent"] { padding-top: 0; }
 
 .st-key-plantlab_sidebar [data-testid="stVerticalBlock"] { gap: .36rem; }
-.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: -.35rem 0 .65rem; }
-.plantlab-brand img { width: 56px; height: 64px; flex: 0 0 auto; object-fit: contain; }
+.plantlab-brand { display: flex; align-items: center; gap: .65rem; margin: -.85rem 0 .65rem; }
+.plantlab-brand img { width: 56px; height: 64px; flex: 0 0 auto; object-fit: contain; object-view-box: inset(3.4% 3.35%); }
 .plantlab-brand strong { display: block; color: #183d49; font-size: .88rem; white-space: nowrap; }
 .plantlab-brand small { display: block; color: #49695d; font-size: .75rem; }
 

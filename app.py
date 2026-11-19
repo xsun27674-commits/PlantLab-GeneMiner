@@ -43,12 +43,9 @@ destination = st.session_state.pop("next_page", None)
 if destination:
     st.session_state["page"] = destination
 page = st.session_state.get("page", "首页")
-if st.session_state.get("_shown_page") != page:
-    st.session_state["_shown_page"] = page
-    if page == "分析记录与导出":
-        components.html("""<script>
-          parent.document.querySelector('[data-testid="stMain"]')?.scrollTo(0, 0);
-        </script>""", height=0)
+previous_page = st.session_state.get("_shown_page")
+st.session_state["_shown_page"] = page
+changed_page = previous_page is not None and previous_page != page
 
 
 def show_nav(container, key):
@@ -86,12 +83,30 @@ with account_ui.popover(
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
 prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_")
 controls = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
-            "alignment_length", "coverage_cutoff", "project_name", "project_species", "project_target", "workspace_auto"}
+            "alignment_length", "coverage_cutoff", "blast_detail_view", "project_name", "project_species", "project_target", "workspace_auto"}
 for key in list(st.session_state):
     if key in controls or key.startswith(prefixes):
         st.session_state[key] = st.session_state[key]
 
 navigation[page]()
+if changed_page:
+    components.html("""<script>
+      const main = parent.document.querySelector('[data-testid="stMain"]');
+      if (main) {
+        const input = ["wheel", "touchstart", "pointerdown", "keydown"];
+        const top = () => main.scrollTo({top: 0, behavior: "instant"});
+        const observer = new parent.ResizeObserver(top);
+        const stop = () => {
+          observer.disconnect();
+          for (const event of input) parent.document.removeEventListener(event, stop, true);
+        };
+        for (const event of input) parent.document.addEventListener(event, stop, true);
+        top();
+        parent.requestAnimationFrame(top);
+        if (main.firstElementChild) observer.observe(main.firstElementChild);
+        setTimeout(stop, 700);
+      }
+    </script>""", height=0)
 if page not in ("账户", "我的项目") and st.session_state.get("workspace_auto") and st.session_state.get("auth_token"):
     if store := get_store():
         with st.sidebar:

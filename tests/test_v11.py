@@ -117,8 +117,8 @@ def test_query_palette_override():
 
 
 @pytest.mark.parametrize(("language", "overview", "marker"), [
-    ("zh", "分析概览", "教学演示报告"),
-    ("en", "Analysis overview", "Demonstration Report"),
+    ("zh", "项目基本信息", "教学演示报告"),
+    ("en", "Project information", "Demonstration Report"),
 ])
 def test_bilingual_demonstration_report(language, overview, marker):
     record = build_record({"项目名称": "Study"}, {"文件来源": "模拟教学数据"})

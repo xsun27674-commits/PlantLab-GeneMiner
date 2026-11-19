@@ -233,7 +233,7 @@ def fit_query_legend(figure, width=None):
         if trace.name:
             entries.append(16 * len(chunks) + 14)
     columns = max(1, (int(width or figure.layout.width) - 100) // 218)
-    space = 42 + sum(max(entries[start:start + columns])
+    space = 20 + sum(max(entries[start:start + columns])
                      for start in range(0, len(entries), columns))
     figure.update_layout(
         height=figure.layout.height + space,
@@ -387,7 +387,8 @@ def _chart_panel(key, builder, data, defaults, groupable):
             st.caption(tr("柱形统计 BLAST 命中记录。一个 Subject 可对应多条记录。"))
     filename = export_filename(key, "chart")
     responsive.update_layout(width=None, autosize=True)
-    html = pio.to_html(responsive, full_html=False, include_plotlyjs=PLOTLY_SCRIPT, div_id="chart",
+    compact = "watchLegend(document.getElementById('{plot_id}'));" if style.query_colors and figure.layout.showlegend else None
+    html = pio.to_html(responsive, full_html=False, include_plotlyjs=PLOTLY_SCRIPT, div_id="chart", post_script=compact,
                        config={"displaylogo": False, "responsive": True,
                                "modeBarButtonsToRemove": ["toImage"]})
     with preview:
@@ -414,12 +415,48 @@ def browser_chart(plot_html, filename, layout):
     failure = json.dumps(tr("图片下载失败，请重试。"), ensure_ascii=True)
     return f"""
 <style>
+html, body {{ overflow:hidden; }}
 body {{ margin:0; font:14px system-ui,sans-serif; }}
 .plotly-graph-div {{ max-width:min(100%, {layout.width}px); margin-inline:auto; }}
 section {{ display:flex; gap:8px; flex-wrap:wrap; margin:5px 0; }}
 button {{ border:1px solid #bad2c8; border-radius:7px; padding:7px 12px;
           background:#f5faf7; color:#176b4d; cursor:pointer; }}
 </style>
+<script>
+async function compactLegend(chart, resizeFrame) {{
+  const legend = chart.querySelector('.legend');
+  const title = chart.querySelector('.xtitle');
+  if (!legend || !title || !legend.getBoundingClientRect().height || !chart.clientWidth) return;
+  const gap = legend.getBoundingClientRect().top - title.getBoundingClientRect().bottom;
+  const change = Math.round(27 - gap);
+  if (Math.abs(change) > 2) {{
+    const bottom = Math.max(35, chart.layout.margin.b + change);
+    const height = chart.layout.height + bottom - chart.layout.margin.b;
+    await Plotly.relayout(chart, {{height, 'margin.b': bottom}});
+  }}
+  if (resizeFrame && window.frameElement) {{
+    window.frameElement.style.height = (chart.layout.height + 66) + 'px';
+  }}
+}}
+function watchLegend(chart) {{
+  const baseHeight = chart.layout.height;
+  const baseBottom = chart.layout.margin.b;
+  let width = 0, timer;
+  const update = () => {{
+    const nextWidth = Math.min(document.documentElement.clientWidth, {layout.width});
+    if (!nextWidth || nextWidth === width) return;
+    width = nextWidth;
+    clearTimeout(timer);
+    timer = setTimeout(async () => {{
+      await Plotly.relayout(chart, {{width, autosize: false, height: baseHeight, 'margin.b': baseBottom}});
+      await compactLegend(chart, true);
+      window.scrollTo(0, 0);
+    }}, 90);
+  }};
+  window.addEventListener('resize', update);
+  update();
+}}
+</script>
 {plot_html}
 <section>{buttons}<span role="status"></span></section>
 <script>
@@ -431,8 +468,25 @@ document.querySelectorAll('button[data-format]').forEach(button => {{
     status.textContent = '';
     try {{
       const chart = document.getElementById('chart');
-      await Plotly.downloadImage({{data: chart.data, layout: {{...chart.layout, ...{export_layout}}}}},
-        {{...{options}, format, scale: format === 'png' ? 2 : 1}});
+      const exportOptions = {{...{options}, format, scale: format === 'png' ? 2 : 1}};
+      const layout = {{...chart.layout, ...{export_layout}, width: exportOptions.width,
+                      height: exportOptions.height, autosize: false}};
+      const target = document.createElement('div');
+      target.style.cssText = 'position:fixed;left:-10000px;top:0';
+      document.body.appendChild(target);
+      try {{
+        if (layout.legend && layout.legend.orientation === 'h') {{
+          await Plotly.newPlot(target, chart.data, layout, {{staticPlot:true, displaylogo:false}});
+          await compactLegend(target, false);
+          exportOptions.height = target.layout.height;
+          await Plotly.downloadImage(target, exportOptions);
+        }} else {{
+          await Plotly.downloadImage({{data: chart.data, layout}}, exportOptions);
+        }}
+      }} finally {{
+        if (target.data) Plotly.purge(target);
+        target.remove();
+      }}
     }} catch (error) {{
       status.textContent = {failure};
     }} finally {{
