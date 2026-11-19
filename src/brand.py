@@ -16,6 +16,8 @@ PLACEHOLDER = ASSETS / "logo-placeholder.png"
 
 
 def image_size(path):
+    if path is None:
+        return None
     try:
         with Image.open(path) as image:
             if image.format == "PNG":
@@ -27,7 +29,7 @@ def image_size(path):
 
 def logo():
     path = Path(os.environ.get("GENEMINER_LOGO_PATH") or ASSETS / "logo.png")
-    return path if image_size(path) else PLACEHOLDER
+    return path if image_size(path) else None
 
 
 def is_wide_logo(path):
@@ -40,13 +42,17 @@ def logo_icon():
     if image_size(path) and not is_wide_logo(path):
         return path
     banner = logo()
-    return PLACEHOLDER if is_wide_logo(banner) else banner
+    return None if is_wide_logo(banner) else banner
 
 
 def brand_banner():
     path = logo()
     if is_wide_logo(path):
         st.image(str(path), width=720, caption=NAME)
+        st.caption(TAGLINE)
+        return
+    if path is None:
+        st.title(NAME)
         st.caption(TAGLINE)
         return
     left, right = st.columns([1, 7])
@@ -57,6 +63,10 @@ def brand_banner():
 
 def help_center():
     st.title(tr("帮助中心"))
+    from src.pages import DATA, EXAMPLES
+    st.subheader(tr("模拟教学数据"))
+    for column, (name, label) in zip(st.columns(2), EXAMPLES.values()):
+        column.download_button(f"{tr('下载')} {tr(label)}", (DATA / name).read_bytes(), name, "text/plain")
     sections = (
         ("FASTA 文件", "每条记录从 > 和序列 ID 开始，随后为核酸或蛋白质序列。导入时请选择类型。"),
         ("BLAST 字段", "pident 是序列一致性百分比，bitscore 是比特得分，E-value 是期望随机命中数，qcovs 是每个 Subject 的查询覆盖度。"),

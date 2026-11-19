@@ -38,6 +38,9 @@ class ChartStyle:
     legend_title: str = "Query"
     query_colors: bool = False
     query_palette: str = ""
+    category_colors: bool = False
+    before_color: str = "#9BC9B1"
+    after_color: str = "#176B4D"
     x_range: str = ""
     y_range: str = ""
 
@@ -67,7 +70,7 @@ def query_palette(value):
 
 
 def validate_style(style):
-    for color in (style.color, style.font_color, style.background):
+    for color in (style.color, style.font_color, style.background, style.before_color, style.after_color):
         if not isinstance(color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
             raise ValueError("颜色须为 6 位 HEX 色号，如 #147756。")
     for value, minimum, maximum in (
@@ -103,6 +106,8 @@ def apply_style(figure, style):
     for index, trace in enumerate(fig.data):
         color = PALETTE[(index - 1) % len(PALETTE)] if style.query_colors and index else style.color
         color = custom_palette.get(trace.name, color)
+        if style.category_colors:
+            color = {"筛选前": style.before_color, "筛选后": style.after_color}.get(trace.name, color)
         updates = {"opacity": style.opacity}
         if trace.type in ("scatter", "scattergl"):
             updates.update(marker_color=color, marker_size=style.point_size, line_color=color)
@@ -150,7 +155,10 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             current = replace(current, **{field: value})
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
-    with st.expander(tr("图表样式与导出")):
+    with st.expander(tr("编辑图表")):
+        if key == "blast_comparison" and st.button(tr("恢复默认配色"), key=f"reset_colors_{key}"):
+            defaults = replace(defaults, category_colors=True, before_color="#9BC9B1", after_color="#176B4D")
+            reset_controls(key, defaults)
         preset = st.selectbox(tr("绘图模板"), PRESETS, index=2, key=f"style_preset_{key}", format_func=translator())
         if st.button(tr("应用模板"), key=f"style_apply_{key}"):
             if preset != "自定义":
@@ -166,6 +174,7 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             except (ValueError, TypeError, OverflowError) as exc:
                 st.error(f"配置无效：{exc}")
         names = {
+            "category_colors": "按类别配色", "before_color": "筛选前颜色", "after_color": "筛选后颜色",
             "title": "图表标题", "x_title": "横轴名称", "y_title": "纵轴名称",
             "color": "绘图颜色", "font_color": "字体颜色", "background": "背景颜色",
             "legend_title": "图例名称", "x_range": "横轴范围（最小,最大）",
@@ -182,9 +191,11 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             label = tr(label)
             widget_key = f"style_value_{key}_{field}"
             value = values[field]
+            if field in ("category_colors", "before_color", "after_color") and key != "blast_comparison":
+                continue
             if field in ("query_colors", "query_palette") and not groupable:
                 continue
-            if field in ("color", "font_color", "background"):
+            if field in ("color", "font_color", "background", "before_color", "after_color"):
                 def update_hex(picker=widget_key, hex_key=f"{widget_key}_hex"):
                     st.session_state[hex_key] = st.session_state[picker]
                 control.color_picker(label, value, key=widget_key, on_change=update_hex)
@@ -214,7 +225,7 @@ def chart_panel(key, builder, data, defaults, groupable=False):
     figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
     figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
     st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
-    with st.expander(tr("图片导出")):
+    with st.expander(tr("导出图片")):
         filename = export_filename(
             st.text_input(tr("文件名"), key, max_chars=80, key=f"filename_{key}"), key)
         scale = st.slider(tr("PNG 倍率"), 1, 3, 2, key=f"scale_{key}")
@@ -228,7 +239,7 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             "width": style.width, "height": style.height, "scale": scale if fmt != "svg" else 1,
         },
     })
-    with st.expander(tr("高级导出")):
+    with st.expander(tr("更多")):
         exports = st.columns(3)
         exports[0].download_button(tr("交互 HTML"), pio.to_html(figure, full_html=True, include_plotlyjs=True),
                                    f"{filename}.html", "text/html", key=f"html_{key}")
@@ -254,5 +265,5 @@ def reset_controls(key, style):
     for field, value in asdict(style).items():
         widget_key = f"style_value_{key}_{field}"
         st.session_state[widget_key] = value
-        if field in ("color", "font_color", "background"):
+        if field in ("color", "font_color", "background", "before_color", "after_color"):
             st.session_state[f"{widget_key}_hex"] = value

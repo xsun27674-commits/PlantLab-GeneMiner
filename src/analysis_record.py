@@ -13,7 +13,9 @@ def build_record(metadata, fasta_result=None, blast_result=None, pairwise_record
         record["BLAST"] = {
             "上传文件名称": blast_result["name"], "文件来源": blast_result["origin"],
             "分析时间（UTC）": blast_result["timestamp"], "原始命中数": blast_result["before"],
-            "筛选后命中数": len(blast_result["filtered"]), "分隔符": blast_result["delimiter"],
+            "筛选后命中数": len(blast_result["filtered"]),
+            "保留比例": f'{len(blast_result["filtered"]) / blast_result["before"]:.1%}' if blast_result["before"] else "0.0%",
+            "分隔符": blast_result["delimiter"],
             "表头模式": blast_result["header"],
         }
         record["字段映射"] = blast_result["mapping"]

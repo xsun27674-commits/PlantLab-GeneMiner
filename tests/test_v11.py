@@ -84,7 +84,7 @@ def test_static_images_and_document_with_picture():
     assert image_bytes(plot, "pdf").startswith(b"%PDF")
     record = build_record({"项目名称": "植物分析"})
     document = word_report("科研报告", "", "", record, {}, {}, [(style.title, png)])
-    assert len(Document(BytesIO(document)).inline_shapes) == 2
+    assert len(Document(BytesIO(document)).inline_shapes) == 1
 
 
 def test_record_and_word_document():
@@ -131,3 +131,15 @@ def test_bilingual_demonstration_report(language, overview, marker):
     with ZipFile(BytesIO(output)) as package:
         table_xml = package.read("word/document.xml")
         assert b"tblHeader" in table_xml and b"cantSplit" in table_xml
+
+
+def test_comparison_class_colors_are_independent():
+    from src.visualization import hit_comparison
+
+    figure = hit_comparison(60, 2)
+    style = ChartStyle("Comparison", "Stage", "Hits", category_colors=True, legend=False)
+    colored = apply_style(figure, style)
+    assert [trace.marker.color for trace in colored.data] == ["#9BC9B1", "#176B4D"]
+    assert not colored.layout.showlegend
+    unified = apply_style(figure, replace(style, category_colors=False))
+    assert [trace.marker.color for trace in unified.data] == [style.color, style.color]

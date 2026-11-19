@@ -77,7 +77,7 @@ docker build -t plantlab-geneminer:v3 .
 docker run --rm -p 7860:7860 plantlab-geneminer:v3
 ```
 
-使用 `GENEMINER_DEV_DB=/absolute/private/path/development.sqlite3` 可启用开发账户和持久化项目。该模式供本机调试，不具备公共运营需要的邮件确认、反滥用和限流。不要对互联网启用。备份开发数据库时同时保护其文件及相关卷。将正式横版 PNG 放到 `assets/logo.png`，或用 `GENEMINER_LOGO_PATH` 指定文件。首页、账号页、关于页、侧边栏和 Word 封面会自动使用该文件。可另放方形图标 `assets/logo-icon.png`，或用 `GENEMINER_LOGO_ICON_PATH` 指定浏览器图标。正式资源缺失或无法读取时会显示占位图。
+使用 `GENEMINER_DEV_DB=/absolute/private/path/development.sqlite3` 可启用开发账户和持久化项目。该模式供本机调试，不具备公共运营需要的邮件确认、反滥用和限流。不要对互联网启用。备份开发数据库时同时保护其文件及相关卷。将正式横版 PNG 放到 `assets/logo.png`，或用 `GENEMINER_LOGO_PATH` 指定文件。首页、账号页、关于页、侧边栏和 Word 封面会自动使用该文件。可另放方形图标 `assets/logo-icon.png`，或用 `GENEMINER_LOGO_ICON_PATH` 指定浏览器图标。正式资源缺失或无法读取时只显示品牌文字。
 
 ### 正式部署及数据存储
 

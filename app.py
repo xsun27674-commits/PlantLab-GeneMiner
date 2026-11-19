@@ -6,16 +6,17 @@ from src import pages
 from src.account_page import account_page, autosave, get_store, workspace_page
 from src.workspace_state import clear
 from src.brand import help_center, is_wide_logo, logo, logo_icon
-from src.i18n import tr, translator
+from src.i18n import tr
 from src.alignment_page import alignment_page
 
-st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(logo_icon()), layout="wide")
+st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(icon) if (icon := logo_icon()) else None, layout="wide")
 
 _, language_ui = st.columns([5, 1])
 language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
                       key="language")
 sidebar_logo = logo()
-st.sidebar.image(str(sidebar_logo), width="stretch" if is_wide_logo(sidebar_logo) else 66)
+if sidebar_logo:
+    st.sidebar.image(str(sidebar_logo), width="stretch" if is_wide_logo(sidebar_logo) else 66)
 st.sidebar.title("PlantLab-GeneMiner")
 st.sidebar.caption("V3.0")
 st.sidebar.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))
@@ -42,9 +43,30 @@ if pending:
 destination = st.session_state.pop("next_page", None)
 if destination:
     st.session_state["page"] = destination
-elif "page" in st.session_state:
-    st.session_state["page"] = st.session_state["page"]
-page = st.sidebar.radio(tr("页面导航"), navigation, key="page", format_func=translator())
+page = st.session_state.get("page", "首页")
+
+
+def show_nav(container, key):
+    container.button(tr(key), key=f"nav_{key}", width="stretch",
+                     type="primary" if key == page else "tertiary",
+                     on_click=st.session_state.__setitem__, args=("page", key))
+
+
+for group, keys in (
+    ("工作台", ("首页",)),
+    ("序列分析", ("FASTA 序列分析", "成对序列比对")),
+    ("候选基因分析", ("BLAST 候选筛选",)),
+    ("结果管理", ("结果可视化", "分析记录与导出", "我的项目")),
+):
+    with st.sidebar.expander(tr(group), expanded=page in keys):
+        for entry in keys:
+            show_nav(st, entry)
+for entry in ("帮助中心", "关于平台"):
+    show_nav(st.sidebar, entry)
+with language_ui:
+    if not st.session_state.get("auth_token"):
+        st.caption(tr("游客"))
+    show_nav(st, "账户")
 
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
 prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_")

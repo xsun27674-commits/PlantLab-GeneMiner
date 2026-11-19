@@ -54,7 +54,8 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
     doc.add_heading(title, 0)
     try:
         logo_path = logo()
-        doc.add_picture(str(logo_path), width=Inches(4.8 if is_wide_logo(logo_path) else 0.85))
+        if logo_path:
+            doc.add_picture(str(logo_path), width=Inches(4.8 if is_wide_logo(logo_path) else 0.85))
     except (OSError, ValueError):
         pass
     demonstration = any(record.get(group, {}).get("文件来源") == "模拟教学数据" for group in ("FASTA", "BLAST"))

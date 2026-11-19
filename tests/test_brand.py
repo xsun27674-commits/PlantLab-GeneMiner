@@ -15,7 +15,7 @@ def test_wide_logo_on_cover_and_square_favicon(tmp_path, monkeypatch):
     banner = tmp_path / "logo.png"
     Image.new("RGB", (1536, 1024)).save(banner)
     assert brand.logo() == banner
-    assert brand.logo_icon() == brand.PLACEHOLDER
+    assert brand.logo_icon() is None
 
     cover = word_report("Test", "", "", {"软件版本": "3.0.0", "科研信息": {}}, {}, {}, [])
     assert Document(BytesIO(cover)).inline_shapes[0].width == Inches(4.8)
@@ -24,4 +24,4 @@ def test_wide_logo_on_cover_and_square_favicon(tmp_path, monkeypatch):
     assert brand.logo_icon() == icon
 
     banner.write_bytes(b"invalid PNG")
-    assert brand.logo() == brand.PLACEHOLDER
+    assert brand.logo() is None

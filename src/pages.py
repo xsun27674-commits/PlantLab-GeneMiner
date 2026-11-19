@@ -69,29 +69,17 @@ def source(kind, extensions):
 
 def home():
     brand_banner()
-    st.subheader(tr("面向植物功能基因挖掘的多维证据分析与候选基因优选平台"))
-    st.write(tr("管理植物序列、审查 BLAST 命中并记录可复查的筛选参数。"))
-    for column, label, destination in zip(st.columns(3),
-        ("开始 FASTA 分析", "打开 BLAST 筛选", "登录或注册"),
-        ("FASTA 序列分析", "BLAST 候选筛选", "账户")):
+    st.subheader(tr("植物序列分析与候选基因筛选平台"))
+    if not st.session_state.get("auth_token"):
+        st.caption(tr("游客分析不会自动长期保存，请及时下载结果。"))
+    for column, label, destination in zip(st.columns(2),
+        ("开始新分析", "我的项目"), ("FASTA 序列分析", "我的项目")):
         if column.button(tr(label), width="stretch"):
             navigate(destination)
-    steps = st.columns(5)
-    for column, (title, description) in zip(steps, (
-        ("FASTA 序列", "检查 ID、长度和字符"),
-        ("BLAST 导入", "确认字段映射"),
-        ("候选筛选", "设置阈值并查看最佳命中"),
-        ("数据可视化", "检查分布和候选数量"),
-        ("结果导出", "下载结果与分析记录"),
-    )):
-        with column.container(border=True):
-            st.markdown(f"**{tr(title)}**")
-            st.caption(tr(description))
-    st.subheader(tr("模拟教学数据"))
-    st.write(tr("示例序列为人工生成，命中表包含 60 条模拟记录。可下载文件，或在对应页面直接载入。"))
-    for column, (name, label) in zip(st.columns(2), EXAMPLES.values()):
-        column.download_button(f"{tr('下载')} {tr(label)}", (DATA / name).read_bytes(), name, "text/plain")
-    st.info(tr(NOTICE))
+    for column, label, destination in zip(st.columns(3),
+        ("使用指南", "模拟教学数据", "关于平台"), ("帮助中心", "帮助中心", "关于平台")):
+        if column.button(tr(label), key=f"home_{label}", type="tertiary"):
+            navigate(destination)
 
 
 def run_time():
@@ -296,7 +284,7 @@ def visualization():
     st.caption(f'{result["name"]} · {tr(result["origin"])} · {tr("当前筛选结果")}')
     comparison = pd.DataFrame({"阶段": ["筛选前", "筛选后"], "命中数量": [result["before"], len(hits)]})
     chart_panel("blast_comparison", lambda _: charts.hit_comparison(result["before"], len(hits)), comparison,
-                ChartStyle("筛选前后命中数量", "阶段", "命中数量", legend=False))
+                ChartStyle("筛选前后命中数量", "阶段", "命中数量", legend=False, legend_title="", category_colors=True))
     counts = result["counts"]
     chart_panel("blast_candidates", lambda grouped: charts.query_bars(counts, grouped), counts,
                 ChartStyle("各 Query 候选数量", "Query", "候选数量"), groupable=True)
@@ -322,17 +310,29 @@ def visualization():
 
 def records():
     st.title(tr("分析记录与导出"))
+    blast_result = st.session_state.get("blast_result")
     metadata = {}
-    for label in METADATA:
+    for label in (*METADATA, "数据库登录号"):
+        if not blast_result and label in ("BLAST 程序及版本", "参考数据库及版本"):
+            continue
         widget = st.text_area if label == "分析备注" else st.text_input
-        metadata[label] = widget(tr(label), key=f"research_{label}")
+        metadata[label] = widget(tr("研究说明与备注（可选）" if label == "分析备注" else label), key=f"research_{label}")
+        if label in ("BLAST 程序及版本", "参考数据库及版本") and not metadata[label].strip():
+            metadata[label] = "未提供"
     fasta_result = st.session_state.get("fasta_result")
     blast_result = st.session_state.get("blast_result")
     pairwise_record = st.session_state.get("pairwise_record")
     record = build_record(metadata, fasta_result, blast_result, pairwise_record)
     save_button()
     st.subheader(tr("当前分析记录"))
-    st.json(record, expanded=1)
+    for module in ("FASTA", "BLAST", "成对序列比对"):
+        if module in record:
+            st.markdown(f"**{tr(module)}**")
+            st.caption(" · ".join(f"{tr(key)}: {tr(value)}" for key, value in record[module].items()
+                                  if key in ("上传文件名称", "序列数", "最短序列", "最长序列", "原始命中数",
+                                             "筛选后命中数", "保留比例", "比对列数")))
+    with st.expander(tr("原始 JSON")):
+        st.json(record)
     st.download_button(tr("下载分析记录 JSON"), json_bytes(record), "analysis.json", "application/json")
     if blast_result:
         filtered = blast_result["filtered"]
@@ -358,7 +358,7 @@ def report_section(record, blast_result):
                            key="report_setting_mode")
     title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
     background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
-    notes = st.text_area(tr("报告备注"), max_chars=5000, key="report_setting_notes")
+    notes = record["科研信息"].get("分析备注", "")
     figures = st.session_state.get("report_figures", {})
     if static_images_enabled():
         selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
@@ -385,30 +385,26 @@ def report_section(record, blast_result):
                             "比对长度中位数": f"{hits['length'].median():g}",
                             "比特得分中位数": f"{hits['bitscore'].median():g}"})
     chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
-    if st.button(tr("生成 Word 报告"), type="primary"):
-        try:
-            images = []
-            for key in selected_figures:
-                chart_title, original = figures[key]
-                figure = type(original)(original)
-                figure.update_layout(title_text=tr(chart_title, language))
-                axes = (figure.layout.xaxis, figure.layout.yaxis)
-                source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
-                for axis, label in zip(axes, source_labels):
-                    axis.title.text = tr(label, language)
-                images.append((chart_title, image_bytes(figure, "png")))
-            output = word_report(tr(title.strip() or "PlantLab-GeneMiner 分析报告", language), background, notes,
-                                 record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
-        except Exception:
-            st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
-        else:
-            st.session_state["last_report"] = output
-    if stored_report := st.session_state.get("last_report"):
-        st.caption(tr("保存的分析报告"))
-        st.download_button(tr("下载 Word 报告"), stored_report, "plantlab_geneminer_report.docx",
+    try:
+        images = []
+        for key in selected_figures:
+            chart_title, original = figures[key]
+            figure = type(original)(original)
+            figure.update_layout(title_text=tr(chart_title, language))
+            axes = (figure.layout.xaxis, figure.layout.yaxis)
+            source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
+            for axis, label in zip(axes, source_labels):
+                axis.title.text = tr(label, language)
+            images.append((chart_title, image_bytes(figure, "png")))
+        output = word_report(tr(title.strip() or "PlantLab-GeneMiner 分析报告", language), background, notes,
+                             record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
+    except Exception:
+        st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
+    else:
+        st.session_state["last_report"] = output
+        st.download_button(tr("下载 Word 报告"), output, "plantlab_geneminer_report.docx",
                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                           on_click="ignore")
-
+                           on_click="ignore", type="primary")
 
 def about():
     brand_banner()
