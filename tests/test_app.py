@@ -58,3 +58,19 @@ def test_lightweight_preview_keeps_interactive_export(monkeypatch):
     next(button for button in app.button if button.label == "生成 Word 报告").click().run()
     assert not app.exception
     assert len(app.get("download_button")) == 2
+
+
+def test_language_switch_keeps_fasta_analysis():
+    app = AppTest.from_file(str(APP), default_timeout=25).run()
+    app.sidebar.radio(key="page").set_value("FASTA 序列分析").run()
+    app.checkbox(key="fasta_example").check().run()
+    app.radio(key="sequence_type").set_value("nucleotide").run()
+    app.selectbox(key="language").set_value("en").run()
+    assert not app.exception
+    assert app.metric[0].label == "Sequences"
+    assert "Sequence ID" in app.dataframe[0].value
+    assert '"title":{"text":"Sequence length"}' in app.get("plotly_chart")[0].proto.spec
+    app.selectbox(key="language").set_value("zh").run()
+    assert not app.exception
+    assert app.metric[0].value == "6"
+    assert "序列 ID" in app.dataframe[0].value

@@ -6,7 +6,7 @@ from src import pages
 from src.account_page import account_page, autosave, get_store, workspace_page
 from src.workspace_state import clear
 from src.brand import help_center, logo
-from src.i18n import tr
+from src.i18n import tr, translator
 from src.alignment_page import alignment_page
 
 st.set_page_config(page_title="PlantLab-GeneMiner", page_icon=str(logo()), layout="wide")
@@ -41,7 +41,9 @@ if pending:
 destination = st.session_state.pop("next_page", None)
 if destination:
     st.session_state["page"] = destination
-page = st.sidebar.radio(tr("页面导航"), navigation, key="page", format_func=tr)
+elif "page" in st.session_state:
+    st.session_state["page"] = st.session_state["page"]
+page = st.sidebar.radio(tr("页面导航"), navigation, key="page", format_func=translator())
 
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
 prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_")

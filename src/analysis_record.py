@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 
-VERSION = "1.1.0"
+VERSION = "3.0.0"
 
 
 def build_record(metadata, fasta_result=None, blast_result=None, pairwise_record=None):

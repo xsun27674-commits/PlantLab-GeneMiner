@@ -8,9 +8,9 @@ import pandas as pd
 
 import streamlit as st
 
-from src.i18n import display_frame, tr
+from src.i18n import display_frame, tr, translator
 from src.brand import brand_banner
-from src.account_page import save_button
+from src.account_page import navigate, save_button
 
 from src import visualization as charts
 from src.analysis_record import VERSION, build_record
@@ -53,11 +53,11 @@ def source(kind, extensions):
         origin = "模拟教学数据" if content == path.read_bytes() else "用户上传"
         st.session_state[cache_key] = (upload.name, content, origin)
 
-    upload = st.file_uploader(f"上传{label}", type=extensions, key=widget_key,
+    upload = st.file_uploader(f"{tr('上传')} {tr(label)}", type=extensions, key=widget_key,
                               on_change=remember_upload)
     cached = st.session_state.get(cache_key)
     if upload is None and cached is not None:
-        st.caption(f"当前文件 · {cached[0]}")
+        st.caption(f'{tr("当前文件")} · {cached[0]}')
         if st.button(tr("清除当前文件"), key=f"clear_{kind}"):
             st.session_state.pop(cache_key)
             return None
@@ -71,6 +71,11 @@ def home():
     brand_banner()
     st.subheader(tr("面向植物功能基因挖掘的多维证据分析与候选基因优选平台"))
     st.write(tr("管理植物序列、审查 BLAST 命中并记录可复查的筛选参数。"))
+    for column, label, destination in zip(st.columns(3),
+        ("开始 FASTA 分析", "打开 BLAST 筛选", "登录或注册"),
+        ("FASTA 序列分析", "BLAST 候选筛选", "账户")):
+        if column.button(tr(label), width="stretch"):
+            navigate(destination)
     steps = st.columns(5)
     for column, (title, description) in zip(steps, (
         ("FASTA 序列", "检查 ID、长度和字符"),
@@ -80,13 +85,13 @@ def home():
         ("结果导出", "下载结果与分析记录"),
     )):
         with column.container(border=True):
-            st.markdown(f"**{title}**")
-            st.caption(description)
+            st.markdown(f"**{tr(title)}**")
+            st.caption(tr(description))
     st.subheader(tr("模拟教学数据"))
     st.write(tr("示例序列为人工生成，命中表包含 60 条模拟记录。可下载文件，或在对应页面直接载入。"))
     for column, (name, label) in zip(st.columns(2), EXAMPLES.values()):
-        column.download_button(f"下载{label}", (DATA / name).read_bytes(), name, "text/plain")
-    st.info(NOTICE)
+        column.download_button(f"{tr('下载')} {tr(label)}", (DATA / name).read_bytes(), name, "text/plain")
+    st.info(tr(NOTICE))
 
 
 def run_time():
@@ -101,7 +106,7 @@ def fasta():
         figures.pop(chart, None)
     selected = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt"])
     labels = {"nucleotide": "核酸", "protein": "蛋白质"}
-    sequence_type = st.radio(tr("序列类型"), labels, index=None, format_func=lambda key: tr(labels[key]),
+    sequence_type = st.radio(tr("序列类型"), labels, index=None, format_func=lambda key, translate=translator(): translate(labels[key]),
                              horizontal=True, key="sequence_type")
     if selected is None or sequence_type is None:
         st.info(tr("请载入 FASTA 文件并明确选择序列类型。"))
@@ -111,7 +116,7 @@ def fasta():
     try:
         frame = analyze_fasta(data, sequence_type)
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(tr(str(exc)))
         return
     timestamp = previous["分析时间（UTC）"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["fasta_result"] = {
@@ -122,7 +127,7 @@ def fasta():
         "非法字符记录数": int(frame["非法字符"].ne("").sum()),
     }
     if origin == "模拟教学数据":
-        st.caption(origin)
+        st.caption(tr(origin))
     duplicate_count = int(frame["重复 ID"].sum())
     invalid_count = int(frame["非法字符"].ne("").sum())
     empty_count = int(frame["空序列"].sum())
@@ -147,7 +152,7 @@ def coverage_options(hits):
 
 def blast():
     st.title(tr("BLAST 候选筛选"))
-    st.info(NOTICE)
+    st.info(tr(NOTICE))
     previous = st.session_state.pop("blast_result", None)
     figures = st.session_state.setdefault("report_figures", {})
     saved_figures = {key: figures.pop(key) for key in list(figures) if key.startswith("blast_")}
@@ -157,7 +162,7 @@ def blast():
         return
     name, data, origin = selected
     if origin == "模拟教学数据":
-        st.caption(origin)
+        st.caption(tr(origin))
     file_key = sha256(data).hexdigest()
     with st.expander(tr("表格格式与字段映射"), expanded=True):
         left, right = st.columns(2)
@@ -170,7 +175,7 @@ def blast():
         try:
             raw = read_blast(data, delimiter, header)
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(tr(str(exc)))
             return
         st.dataframe(raw.head(5), width="stretch", hide_index=True)
         suggested = suggest_mapping(raw.columns)
@@ -188,14 +193,14 @@ def blast():
         try:
             hits = normalize_hits(raw, mapping)
         except ValueError as exc:
-            st.error(str(exc))
+            st.error(tr(str(exc)))
             return
 
     st.subheader(tr("筛选阈值"))
     st.caption(tr("一致性 pident 表示比对区段中相同位置的百分比；比特得分 bitscore 越高通常表示比对得分越高。"))
     presets = {"自定义筛选": None, "宽松筛选": (30.0, "1e-3", 30, 30.0),
                "严格筛选": (75.0, "1e-20", 100, 70.0)}
-    preset = st.selectbox(tr("筛选预设"), presets, key="blast_preset", format_func=tr)
+    preset = st.selectbox(tr("筛选预设"), presets, key="blast_preset", format_func=translator())
     if presets[preset]:
         identity_value, evalue_value, length_value, coverage_value = presets[preset]
         st.caption(f"一致性 ≥ {identity_value:g}% · E-value ≤ {evalue_value} · 比对长度 ≥ {length_value} · 覆盖度 ≥ {coverage_value:g}%（选用覆盖度字段时）")
@@ -229,7 +234,7 @@ def blast():
     try:
         filtered = filter_hits(hits, thresholds)
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(tr(str(exc)))
         return
     best = best_hits(filtered)
     counts = candidate_counts(filtered, hits["qseqid"])
@@ -270,7 +275,7 @@ def blast():
 
 
 def plot_distribution(frame, key, field, title, id_field):
-    mode = st.selectbox(f"{title}图形", ["自动", "柱状图", "散点图", "直方图"], key=f"chart_mode_{key}", format_func=tr)
+    mode = st.selectbox(f"{tr(title)} · {tr('图形')}", ["自动", "柱状图", "散点图", "直方图"], key=f"chart_mode_{key}", format_func=translator())
     histogram = mode == "直方图" or (mode == "自动" and len(frame) > 20)
     hover_fields = ("序列 ID", "序列类型", "序列长度", "qseqid", "sseqid", "bitscore", "evalue")
     hover = [name for name in hover_fields if name in frame and name != field]
@@ -344,12 +349,19 @@ def records():
 
 def report_section(record, blast_result):
     st.subheader(tr("Word 分析报告"))
-    title = st.text_input(tr("报告标题"), "PlantLab-GeneMiner 分析报告", max_chars=200, key="report_setting_title")
+    left, right = st.columns(2)
+    language = left.selectbox(tr("报告语言"), ("zh", "en"),
+                              format_func={"zh": "中文报告", "en": "English Report"}.get,
+                              key="report_setting_language")
+    mode = right.selectbox(tr("报告模式"), ("full", "concise"),
+                           format_func=lambda key, translate=translator(): translate("完整版" if key == "full" else "简洁版"),
+                           key="report_setting_mode")
+    title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
     background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
     notes = st.text_area(tr("报告备注"), max_chars=5000, key="report_setting_notes")
     figures = st.session_state.get("report_figures", {})
     if static_images_enabled():
-        selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: figures[key][0])
+        selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
     else:
         selected_figures = []
         st.caption(tr("轻量预览支持 Word 文字与表格。带图报告请使用本地或 Docker 版本。"))
@@ -364,21 +376,37 @@ def report_section(record, blast_result):
         total = blast_result["before"]
         metrics = {"原始命中数": total, "筛选后命中数": len(hits), "保留比例": f"{len(hits)/total:.1%}"}
         if not hits.empty:
+            coverage_fields = coverage_options(hits)
+            if coverage_fields:
+                coverage = coverage_fields[0]
+                low_coverage = int(((hits["pident"] >= 90) & (hits[coverage] < 50)).sum())
+                metrics[f'{tr("高一致性且低覆盖度命中", language)} (pident ≥ 90%, {coverage} < 50%)'] = low_coverage
             metrics.update({"一致性中位数（%）": f"{hits['pident'].median():.2f}",
                             "比对长度中位数": f"{hits['length'].median():g}",
                             "比特得分中位数": f"{hits['bitscore'].median():g}"})
-    chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables))
+    chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
     if st.button(tr("生成 Word 报告"), type="primary"):
         try:
-            images = [(figures[key][0], image_bytes(figures[key][1], "png")) for key in selected_figures]
-            output = word_report(title.strip() or "PlantLab-GeneMiner 分析报告", background, notes,
-                                 record, metrics, {key: tables[key] for key in chosen}, images)
+            images = []
+            for key in selected_figures:
+                chart_title, original = figures[key]
+                figure = type(original)(original)
+                figure.update_layout(title_text=tr(chart_title, language))
+                axes = (figure.layout.xaxis, figure.layout.yaxis)
+                source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
+                for axis, label in zip(axes, source_labels):
+                    axis.title.text = tr(label, language)
+                images.append((chart_title, image_bytes(figure, "png")))
+            output = word_report(tr(title.strip() or "PlantLab-GeneMiner 分析报告", language), background, notes,
+                                 record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
         except Exception:
             st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
         else:
-            st.download_button(tr("下载 Word 报告"), output, "plantlab_geneminer_report.docx",
-                               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                               on_click="ignore")
+            st.session_state["last_report"] = output
+    if stored_report := st.session_state.get("last_report"):
+        st.download_button(tr("下载 Word 报告"), stored_report, "plantlab_geneminer_report.docx",
+                           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                           on_click="ignore")
 
 
 def about():
@@ -397,16 +425,16 @@ def about():
     for index in range(0, len(cards), 3):
         for column, (title, description) in zip(st.columns(3), cards[index:index + 3]):
             with column.container(border=True):
-                st.markdown(f"**{title}**")
-                st.write(description)
+                st.markdown(f"**{tr(title)}**")
+                st.write(tr(description))
     st.subheader(tr("开始使用"))
     st.write(tr("适合植物科学专业本科生、研究生、生物信息学初学者及科研人员。"))
     st.write(tr("上传数据 → 检查数据 → 设置参数 → 执行分析 → 查看结果 → 导出文件"))
     st.subheader(tr("项目信息"))
-    st.write(f"当前版本 {VERSION} · 新增成对比对、图表编辑与 Word 报告")
+    st.write(f"{tr('当前版本')} {VERSION}")
     st.caption(tr("开发者信息待补充。"))
     st.link_button(tr("GitHub 项目"), "https://github.com/xsun27674-commits/PlantLab-GeneMiner")
     st.link_button(tr("问题反馈"), "https://github.com/xsun27674-commits/PlantLab-GeneMiner/issues")
     st.subheader(tr("使用须知"))
-    st.info(NOTICE)
+    st.info(tr(NOTICE))
     st.write(tr("上传内容及分析结果仅在当前会话中处理。模拟教学数据不用于真实生物学推断。多维证据综合评分和 BLAST+ 数据库搜索列入后续开发。"))

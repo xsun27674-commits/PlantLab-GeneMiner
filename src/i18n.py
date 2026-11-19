@@ -23,3 +23,10 @@ def tr(message, language=None):
 
 def display_frame(frame):
     return frame.rename(columns=tr)
+
+
+def translator():
+    """Bind the language for widget option serialization."""
+    from functools import partial
+
+    return partial(tr, language=st.session_state.get("language", "zh"))

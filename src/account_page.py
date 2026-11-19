@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.accounts import DevelopmentStore, InvalidSession, ServiceError, configured_store
 from src.brand import brand_banner
-from src.i18n import tr
+from src.i18n import tr, translator
 from src.workspace_state import clear, restore, snapshot
 
 
@@ -61,7 +61,7 @@ def account_page():
         except (ServiceError, sqlite3.Error, OSError) as exc:
             show_failure(exc)
     if store:
-        mode = st.radio(tr("账户操作"), ("登录", "注册", "忘记密码"), format_func=tr, horizontal=True, key="account_action")
+        mode = st.radio(tr("账户操作"), ("登录", "注册", "忘记密码"), format_func=translator(), horizontal=True, key="account_action")
         if mode == "忘记密码" and isinstance(store, DevelopmentStore):
             st.info(tr("开发模式不发送密码重置邮件。"))
         else:

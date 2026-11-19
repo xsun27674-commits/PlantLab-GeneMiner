@@ -9,7 +9,7 @@ import plotly.io as pio
 from plotly.colors import qualitative
 import streamlit as st
 
-from src.i18n import tr
+from src.i18n import tr, translator
 
 from src.export_utils import csv_bytes
 
@@ -151,7 +151,7 @@ def chart_panel(key, builder, data, defaults, groupable=False):
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
     with st.expander(tr("图表样式与导出")):
-        preset = st.selectbox(tr("绘图模板"), PRESETS, index=2, key=f"style_preset_{key}", format_func=tr)
+        preset = st.selectbox(tr("绘图模板"), PRESETS, index=2, key=f"style_preset_{key}", format_func=translator())
         if st.button(tr("应用模板"), key=f"style_apply_{key}"):
             if preset != "自定义":
                 defaults = replace(defaults, font_size=19 if preset == "教学展示" else 13,
@@ -212,7 +212,8 @@ def chart_panel(key, builder, data, defaults, groupable=False):
     visible_style = replace(style, title=tr(style.title), x_title=tr(style.x_title),
                             y_title=tr(style.y_title), legend_title=tr(style.legend_title))
     figure = apply_style(builder(style.query_colors if groupable else False), visible_style)
-    st.session_state.setdefault("report_figures", {})[key] = (visible_style.title, figure)
+    figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
+    st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
     with st.expander(tr("图片导出")):
         filename = export_filename(
             st.text_input(tr("文件名"), key, max_chars=80, key=f"filename_{key}"), key)

@@ -84,7 +84,7 @@ def test_static_images_and_document_with_picture():
     assert image_bytes(plot, "pdf").startswith(b"%PDF")
     record = build_record({"项目名称": "植物分析"})
     document = word_report("科研报告", "", "", record, {}, {}, [(style.title, png)])
-    assert len(Document(BytesIO(document)).inline_shapes) == 1
+    assert len(Document(BytesIO(document)).inline_shapes) == 2
 
 
 def test_record_and_word_document():
@@ -114,3 +114,20 @@ def test_query_palette_override():
     assert plot.data[0].marker.color == style.color
     assert plot.data[1].name == "Q2"
     assert plot.data[1].marker.color == "#992233"
+
+
+@pytest.mark.parametrize(("language", "overview", "marker"), [
+    ("zh", "分析概览", "教学演示报告"),
+    ("en", "Analysis overview", "Demonstration Report"),
+])
+def test_bilingual_demonstration_report(language, overview, marker):
+    record = build_record({"项目名称": "Study"}, {"文件来源": "模拟教学数据"})
+    output = word_report("PlantLab", "", "", record, {"序列数": 6},
+                         {"候选基因列表": pd.DataFrame({"序列 ID": ["Q01"]})}, [], language)
+    document = Document(BytesIO(output))
+    paragraphs = {item.text for item in document.paragraphs}
+    assert {overview, marker} <= paragraphs
+    assert document.tables[0].rows[0].cells[0].text == ("序列 ID" if language == "zh" else "Sequence ID")
+    with ZipFile(BytesIO(output)) as package:
+        table_xml = package.read("word/document.xml")
+        assert b"tblHeader" in table_xml and b"cantSplit" in table_xml
