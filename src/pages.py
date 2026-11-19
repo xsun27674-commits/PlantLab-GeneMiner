@@ -24,6 +24,7 @@ from src.blast_utils import (
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
+from src.ncbi_page import ncbi_link, ncbi_source
 from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -90,11 +91,14 @@ def run_time():
 
 
 def sequence_source():
+    ncbi_link()
     mode = st.radio(tr("序列输入方式"), ("upload", "grid"), key="sequence_input_mode",
                     format_func={"upload": tr("上传文件"), "grid": tr("在线表格")}.get,
                     horizontal=True)
     if mode == "upload":
-        upload = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt", "csv", "xlsx"])
+        upload = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt", "csv", "xlsx", "zip"])
+        if upload and Path(upload[0]).suffix.lower() == ".zip":
+            return ncbi_source(upload[0], upload[1])
         if not upload or Path(upload[0]).suffix.lower() not in (".csv", ".xlsx"):
             return upload
         name, data, origin = upload
@@ -168,8 +172,21 @@ def fasta():
         st.error(tr(str(exc)))
         return
     labels = {"nucleotide": "核酸", "protein": "蛋白质"}
-    sequence_type = st.radio(tr("序列类型"), labels, index=None, format_func=lambda key, translate=translator(): translate(labels[key]),
-                             horizontal=True, key="sequence_type")
+    cached_upload = st.session_state.get("fasta_source")
+    pending_ncbi = (
+        st.session_state.get("sequence_input_mode") == "upload" and
+        not st.session_state.get("fasta_example") and cached_upload and
+        Path(cached_upload[0]).suffix.lower() == ".zip"
+    )
+    if pending_ncbi and selected is None:
+        return
+    if selected and selected[2] == "NCBI Datasets":
+        sequence_type = "nucleotide"
+        st.caption(tr("NCBI CDS 按核酸序列分析。"))
+    else:
+        sequence_type = st.radio(tr("序列类型"), labels, index=None,
+                                 format_func=lambda key, translate=translator(): translate(labels[key]),
+                                 horizontal=True, key="sequence_type")
     if selected is None or sequence_type is None:
         st.info(tr("请载入 FASTA 文件并明确选择序列类型。"))
         return

@@ -19,8 +19,9 @@ def read_sequence_table(name, data):
             with ZipFile(BytesIO(data)) as book:
                 if sum(entry.file_size for entry in book.infolist()) > 48 * 1024 * 1024:
                     raise ValueError("XLSX 解压后超过 48 MB。")
-            frame = pd.read_excel(BytesIO(data), engine="openpyxl", dtype=str,
-                                  keep_default_na=False, nrows=MAX_ROWS + 1)
+            with pd.ExcelFile(BytesIO(data), engine="openpyxl") as workbook:
+                frame = pd.read_excel(workbook, dtype=str, keep_default_na=False, nrows=MAX_ROWS + 1)
+                frame = restore_excel_sequences(workbook, frame)
         else:
             frame = pd.read_csv(BytesIO(data), dtype=str, keep_default_na=False,
                                 encoding="utf-8-sig", nrows=MAX_ROWS + 1)
@@ -60,3 +61,61 @@ def table_to_fasta(frame, id_column, sequence_column, *, ignore_blank_rows=False
     if not lines:
         raise ValueError("序列表为空。")
     return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+EXCEL_CELL_LIMIT = 32767
+CHUNK_SIZE = 30000
+CHUNK_SHEET = "PlantLab Sequence Parts"
+CHUNK_MARKER = "@PlantLab:parts:"
+
+
+def write_sequence_xlsx(frame):
+    """Keep ordinary sequences in one cell and store Excel-overflow rows losslessly."""
+    export = frame.copy()
+    chunks = []
+    for row, sequence in enumerate(frame["Sequence"].astype(str), 1):
+        if len(sequence.encode("utf-16-le")) // 2 > EXCEL_CELL_LIMIT:
+            export.iloc[row - 1, export.columns.get_loc("Sequence")] = f"{CHUNK_MARKER}{row}"
+            chunks.extend((row, part + 1, sequence[offset:offset + CHUNK_SIZE // 2])
+                          for part, offset in enumerate(range(0, len(sequence), CHUNK_SIZE // 2)))
+    buffer = BytesIO()
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        export.to_excel(writer, index=False, sheet_name="Sequences")
+        if chunks:
+            pd.DataFrame(chunks, columns=["Row", "Part", "Sequence"]).to_excel(
+                writer, index=False, sheet_name=CHUNK_SHEET)
+        for sheet in writer.sheets.values():
+            sheet.freeze_panes = "A2"
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if isinstance(cell.value, str):
+                        cell.data_type = "s"
+    return buffer.getvalue()
+
+
+def restore_excel_sequences(workbook, frame):
+    if CHUNK_SHEET not in workbook.sheet_names:
+        return frame
+    parts = pd.read_excel(workbook, sheet_name=CHUNK_SHEET, dtype=str, keep_default_na=False)
+    if list(parts.columns) != ["Row", "Part", "Sequence"] or "Sequence" not in frame:
+        raise ValueError("Excel 的序列分片结构无效。")
+    grouped = {}
+    for row, part, sequence in parts.itertuples(index=False, name=None):
+        row_id, part_id = int(row), int(part)
+        group = grouped.setdefault(row_id, {})
+        if part_id in group:
+            raise ValueError("Excel 的序列分片编号重复。")
+        group[part_id] = sequence
+    for row, sequence in enumerate(frame["Sequence"], 1):
+        if sequence != f"{CHUNK_MARKER}{row}":
+            continue
+        group = grouped.pop(row, {})
+        if not group or set(group) != set(range(1, len(group) + 1)):
+            raise ValueError("Excel 的序列分片缺失。")
+        complete = "".join(group[index] for index in range(1, len(group) + 1))
+        if "Length (bp)" in frame and len(complete) != int(frame.iloc[row - 1]["Length (bp)"]):
+            raise ValueError("Excel 的序列分片长度与记录不一致。")
+        frame.iat[row - 1, frame.columns.get_loc("Sequence")] = complete
+    if grouped:
+        raise ValueError("Excel 的序列分片与主表不匹配。")
+    return frame

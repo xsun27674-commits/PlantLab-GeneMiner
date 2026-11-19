@@ -81,7 +81,7 @@ with account_ui.popover(
     show_nav(st, "我的项目")
 
 # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
-prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_")
+prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
 controls = {"fasta_example", "blast_example", "sequence_type", "identity", "evalue",
             "alignment_length", "coverage_cutoff", "blast_detail_view", "project_name", "project_species", "project_target", "workspace_auto"}
 for key in list(st.session_state):
