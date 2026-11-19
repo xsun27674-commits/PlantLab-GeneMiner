@@ -1,16 +1,20 @@
 """Chinese Streamlit views for the analysis workflow."""
 
-from dataclasses import asdict
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 
+import pandas as pd
+
 import streamlit as st
 
 from src import visualization as charts
+from src.analysis_record import VERSION, build_record
+from src.chart_editor import ChartStyle, chart_panel, image_bytes
+from src.report import word_report
 from src.blast_utils import (
     COVERAGE, REQUIRED, Thresholds, best_hits, candidate_counts, filter_hits,
-    normalize_hits, read_blast, suggest_mapping,
+    normalize_hits, parse_evalue, read_blast, rejection_reasons, suggest_mapping,
 )
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.fasta_utils import analyze_fasta
@@ -38,9 +42,12 @@ def source(kind, extensions):
 
     def remember_upload():
         upload = st.session_state[widget_key]
-        st.session_state[cache_key] = (
-            (upload.name, upload.getvalue(), "用户上传") if upload is not None else None
-        )
+        if upload is None:
+            st.session_state[cache_key] = None
+            return
+        content = upload.getvalue()
+        origin = "模拟教学数据" if content == path.read_bytes() else "用户上传"
+        st.session_state[cache_key] = (upload.name, content, origin)
 
     upload = st.file_uploader(f"上传{label}", type=extensions, key=widget_key,
                               on_change=remember_upload)
@@ -50,12 +57,15 @@ def source(kind, extensions):
         if st.button("清除当前文件", key=f"clear_{kind}"):
             st.session_state.pop(cache_key)
             return None
+    if cached is not None and len(cached[1]) > 10 * 1024 * 1024:
+        st.error("文件超过 10 MB，请拆分后再上传。")
+        return None
     return cached
 
 
 def home():
     st.title("PlantLab-GeneMiner")
-    st.subheader("面向植物功能基因挖掘的候选基因筛选与分析平台")
+    st.subheader("面向植物功能基因挖掘的多维证据分析与候选基因优选平台")
     st.write("管理植物序列、审查 BLAST 命中并记录可复查的筛选参数。")
     steps = st.columns(5)
     for column, (title, description) in zip(steps, (
@@ -82,6 +92,9 @@ def run_time():
 def fasta():
     st.title("FASTA 序列分析")
     previous = st.session_state.pop("fasta_result", None)
+    figures = st.session_state.setdefault("report_figures", {})
+    for chart in ("fasta_length", "fasta_gc"):
+        figures.pop(chart, None)
     selected = source("fasta", ["fasta", "fa", "fna", "faa", "fas", "txt"])
     labels = {"nucleotide": "核酸", "protein": "蛋白质"}
     sequence_type = st.radio("序列类型", labels, index=None, format_func=labels.get,
@@ -100,6 +113,9 @@ def fasta():
     st.session_state["fasta_result"] = {
         "key": fingerprint, "上传文件名称": name, "文件来源": origin, "序列类型": labels[sequence_type],
         "分析时间（UTC）": timestamp, "序列数": len(frame),
+        "最短序列": int(frame["序列长度"].min()), "最长序列": int(frame["序列长度"].max()),
+        "重复 ID 记录数": int(frame["重复 ID"].sum()),
+        "非法字符记录数": int(frame["非法字符"].ne("").sum()),
     }
     if origin == "模拟教学数据":
         st.caption(origin)
@@ -114,8 +130,11 @@ def fasta():
     if sequence_type == "nucleotide":
         st.caption("GC 使用 Biopython 的模糊碱基排除规则，S 与 W 按已知 GC 类别计入。无法计算时留空。")
     st.dataframe(frame, width="stretch", hide_index=True)
-    st.plotly_chart(charts.histogram(frame, "序列长度"), width="stretch")
-    st.download_button("下载 FASTA 序列统计 CSV", csv_bytes(frame), "fasta_statistics.csv", "text/csv")
+    frame = frame.assign(序列类型=labels[sequence_type])
+    plot_distribution(frame, "fasta_length", "序列长度", "序列长度", "序列 ID")
+    if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
+        plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
+    st.download_button("下载 FASTA 序列统计 CSV", csv_bytes(frame.drop(columns="序列类型")), "fasta_statistics.csv", "text/csv")
 
 
 def coverage_options(hits):
@@ -126,6 +145,8 @@ def blast():
     st.title("BLAST 候选筛选")
     st.info(NOTICE)
     previous = st.session_state.pop("blast_result", None)
+    figures = st.session_state.setdefault("report_figures", {})
+    saved_figures = {key: figures.pop(key) for key in list(figures) if key.startswith("blast_")}
     selected = source("blast", ["csv", "tsv", "txt", "tab", "out"])
     if selected is None:
         st.info("请上传 BLAST 表格或载入模拟教学数据。")
@@ -167,10 +188,23 @@ def blast():
             return
 
     st.subheader("筛选阈值")
+    st.caption("一致性 pident 表示比对区段中相同位置的百分比；比特得分 bitscore 越高通常表示比对得分越高。")
+    presets = {"自定义筛选": None, "宽松筛选": (30.0, "1e-3", 30, 30.0),
+               "严格筛选": (75.0, "1e-20", 100, 70.0)}
+    preset = st.selectbox("筛选预设", presets, key="blast_preset")
+    if presets[preset]:
+        identity_value, evalue_value, length_value, coverage_value = presets[preset]
+        st.caption(f"一致性 ≥ {identity_value:g}% · E-value ≤ {evalue_value} · 比对长度 ≥ {length_value} · 覆盖度 ≥ {coverage_value:g}%（选用覆盖度字段时）")
+        if st.button("应用筛选预设"):
+            for key, value in zip(("identity", "evalue", "alignment_length", "coverage_cutoff"), presets[preset]):
+                st.session_state[key] = value
+    st.caption("预设用于快速试筛，阈值可调整，应结合物种、基因家族和研究目标解释。")
     left, mid, right = st.columns(3)
-    identity = left.number_input("Identity 最低值 (%)", 0.0, 100.0, 0.0, step=1.0, key="identity")
-    evalue = mid.text_input("E-value 最大值", "1e-5", key="evalue", help="支持科学计数法，0 仅保留 E-value 为 0 的命中。")
-    length = right.number_input("Alignment length 最低值", min_value=1, value=1, step=1, key="alignment_length")
+    identity = left.number_input("序列一致性最低值（pident，%）", 0.0, 100.0, 0.0, step=1.0,
+                                 key="identity", help="较高阈值保留更相似的比对区段。短片段即使一致性高，也可能覆盖很小。")
+    evalue = mid.text_input("E-value 最大值", "1e-5", key="evalue", help="期望随机命中数，通常越低证据越强，也受数据库大小影响。支持科学计数法；0 仅保留值为 0 的命中。")
+    length = right.number_input("比对长度最低值（length）", min_value=1, value=1, step=1,
+                                key="alignment_length", help="提高阈值可排除短片段。比对长度与查询序列覆盖百分比是不同指标。")
     fields = coverage_options(hits)
     if fields:
         left, right = st.columns(2)
@@ -179,10 +213,10 @@ def blast():
             format_func=lambda value: "不按覆盖度筛选" if value is None else value,
             key=f"coverage_{file_key}_{fields}",
         )
-        cutoff = right.number_input("Query coverage 最低值 (%)", 0.0, 100.0, 0.0, step=1.0,
+        cutoff = right.number_input("查询序列覆盖度最低值（%）", 0.0, 100.0, 0.0, step=1.0,
                                     disabled=coverage_field is None, key="coverage_cutoff")
         coverage = cutoff if coverage_field else None
-        st.caption("qcovs 为相同 Subject 的查询覆盖度，qcovhsp 为单条比对覆盖度。启用覆盖度筛选时，缺失值不满足阈值。")
+        st.caption("qcovs 为每个 Subject 的查询序列总体覆盖度，qcovhsp 为单个 HSP 的查询序列覆盖度。启用覆盖度筛选时，缺失值不满足阈值。")
     else:
         coverage_field = coverage = None
         st.caption("本表没有可用的 Query coverage 数值。")
@@ -204,17 +238,43 @@ def blast():
         "header": header,
     }
 
-    for column, label, value in zip(st.columns(3), ("原始命中数", "筛选后命中数", "有候选的 Query"),
-                                    (len(hits), len(filtered), len(best))):
+    if previous and previous["key"] == fingerprint:
+        figures.update(saved_figures)
+    for column, label, value in zip(st.columns(5),
+                                    ("原始命中数", "筛选后命中数", "有候选的 Query", "排除记录数", "保留比例"),
+                                    (len(hits), len(filtered), len(best), len(hits)-len(filtered),
+                                     f"{len(filtered)/len(hits):.1%}")):
         column.metric(label, value)
     if filtered.empty:
         st.warning("当前阈值下没有保留的命中。")
     result_tab, best_tab, count_tab = st.tabs(["筛选结果", "最佳命中", "各 Query 候选数"])
-    result_tab.dataframe(filtered, width="stretch", hide_index=True)
+    result_tab.caption("点击表头按任一指标排序。E-value 按原始文本保留；可用下拉列表按数值排序。")
+    sort_field = result_tab.selectbox("候选比较排序", [None, "bitscore", "pident", "length", "evalue", *fields],
+                                      format_func=lambda field: field or "输入顺序")
+    compared = filtered if sort_field is None else filtered.sort_values(
+        sort_field, ascending=sort_field == "evalue",
+        key=lambda values: values.map(parse_evalue) if sort_field == "evalue" else values,
+        kind="stable",
+    )
+    result_tab.dataframe(compared, width="stretch", hide_index=True)
     best_tab.caption("同一 Query 按 Bit score 降序、E-value 升序、Identity 降序、比对长度降序、Subject ID 升序、原始行序排序，取首条。")
     best_tab.dataframe(best, width="stretch", hide_index=True)
     count_tab.caption("对每个 Query 统计筛选后唯一的 Subject ID，保留候选数为 0 的 Query。")
     count_tab.dataframe(counts, width="stretch", hide_index=True)
+    if len(filtered) < len(hits) and st.checkbox("查看排除原因"):
+        st.dataframe(rejection_reasons(hits, thresholds), width="stretch", hide_index=True)
+
+
+def plot_distribution(frame, key, field, title, id_field):
+    mode = st.selectbox(f"{title}图形", ["自动", "柱状图", "散点图", "直方图"], key=f"chart_mode_{key}")
+    histogram = mode == "直方图" or (mode == "自动" and len(frame) > 20)
+    hover_fields = ("序列 ID", "序列类型", "序列长度", "qseqid", "sseqid", "bitscore", "evalue")
+    hover = [name for name in hover_fields if name in frame and name != field]
+    chart_panel(
+        key, lambda grouped: charts.distribution(frame, field, title, id_field, mode, grouped, hover),
+        frame, ChartStyle(title, title if histogram else id_field, "记录数" if histogram else title),
+        groupable="qseqid" in frame,
+    )
 
 
 def visualization():
@@ -225,28 +285,30 @@ def visualization():
         return
     hits = result["filtered"]
     st.caption(f'{result["name"]} · {result["origin"]} · 当前筛选结果')
-    left, right = st.columns(2)
-    with left:
-        st.subheader("筛选前后命中数量")
-        st.plotly_chart(charts.hit_comparison(result["before"], len(hits)), width="stretch")
-    with right:
-        st.subheader("各 Query 候选数量")
-        st.plotly_chart(charts.query_bars(result["counts"]), width="stretch")
+    comparison = pd.DataFrame({"阶段": ["筛选前", "筛选后"], "命中数量": [result["before"], len(hits)]})
+    chart_panel("blast_comparison", lambda _: charts.hit_comparison(result["before"], len(hits)), comparison,
+                ChartStyle("筛选前后命中数量", "阶段", "命中数量", legend=False))
+    counts = result["counts"]
+    chart_panel("blast_candidates", lambda grouped: charts.query_bars(counts, grouped), counts,
+                ChartStyle("各 Query 候选数量", "Query", "候选数量"), groupable=True)
     if hits.empty:
         st.info("当前没有保留的命中可用于分布图。")
         return
-    for column, label, field in zip(st.columns(2), ("Identity 分布", "Alignment length 分布"),
-                                    ("pident", "length")):
-        with column:
-            st.subheader(label)
-            st.plotly_chart(charts.histogram(hits, field), width="stretch")
-    fields = coverage_options(hits)
-    if fields:
-        st.subheader("Identity 与 Query coverage")
-        field = st.selectbox("绘图覆盖度字段", fields)
-        st.plotly_chart(charts.coverage_scatter(hits, field), width="stretch")
-    elif result["coverage_fields"]:
-        st.caption("筛选后命中均缺少覆盖度数值。")
+    plots = st.tabs(["序列一致性", "比对长度", "覆盖度散点"])
+    with plots[0]:
+        plot_distribution(hits, "blast_identity", "pident", "序列一致性（%）", "sseqid")
+    with plots[1]:
+        plot_distribution(hits, "blast_length", "length", "比对长度", "sseqid")
+    with plots[2]:
+        fields = coverage_options(hits)
+        if fields:
+            field = st.selectbox("绘图覆盖度字段", fields, key="chart_coverage")
+            chart_panel(f"blast_scatter_{field}", lambda grouped: charts.coverage_scatter(hits, field, grouped),
+                        hits.dropna(subset=[field]),
+                        ChartStyle("一致性与覆盖度", "序列一致性（%）", f"查询覆盖度（{field}，%）", query_colors=True),
+                        groupable=True)
+        else:
+            st.info("当前命中没有可用于绘图的覆盖度。")
 
 
 def records():
@@ -255,20 +317,10 @@ def records():
     for label in METADATA:
         widget = st.text_area if label == "分析备注" else st.text_input
         metadata[label] = widget(label, key=f"research_{label}")
-    record = {"科研信息": metadata}
     fasta_result = st.session_state.get("fasta_result")
     blast_result = st.session_state.get("blast_result")
-    if fasta_result:
-        record["FASTA"] = {key: value for key, value in fasta_result.items() if key != "key"}
-    if blast_result:
-        record["BLAST"] = {
-            "上传文件名称": blast_result["name"], "文件来源": blast_result["origin"],
-            "分析时间（UTC）": blast_result["timestamp"], "原始命中数": blast_result["before"],
-            "筛选后命中数": len(blast_result["filtered"]), "分隔符": blast_result["delimiter"],
-            "表头模式": blast_result["header"],
-        }
-        record["字段映射"] = blast_result["mapping"]
-        record["筛选阈值"] = asdict(blast_result["thresholds"])
+    pairwise_record = st.session_state.get("pairwise_record")
+    record = build_record(metadata, fasta_result, blast_result, pairwise_record)
     st.subheader("当前分析记录")
     st.json(record, expanded=1)
     st.download_button("下载分析记录 JSON", json_bytes(record), "analysis.json", "application/json")
@@ -281,9 +333,71 @@ def records():
         )
 
 
+    if fasta_result or blast_result or pairwise_record:
+        report_section(record, blast_result)
+
+
+def report_section(record, blast_result):
+    st.subheader("Word 分析报告")
+    title = st.text_input("报告标题", "PlantLab-GeneMiner 分析报告", max_chars=200)
+    background = st.text_area("研究背景", max_chars=5000)
+    notes = st.text_area("报告备注", max_chars=5000)
+    figures = st.session_state.get("report_figures", {})
+    selected_figures = st.multiselect("插入图表", list(figures), format_func=lambda key: figures[key][0])
+    if not figures:
+        st.caption("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。")
+    metrics = {}
+    tables = {}
+    if blast_result:
+        hits = blast_result["filtered"]
+        tables = {"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
+                  "最佳命中": blast_result["best"]}
+        total = blast_result["before"]
+        metrics = {"原始命中数": total, "筛选后命中数": len(hits), "保留比例": f"{len(hits)/total:.1%}"}
+        if not hits.empty:
+            metrics.update({"一致性中位数（%）": f"{hits['pident'].median():.2f}",
+                            "比对长度中位数": f"{hits['length'].median():g}",
+                            "比特得分中位数": f"{hits['bitscore'].median():g}"})
+    chosen = st.multiselect("导出结果表", list(tables), default=list(tables))
+    if st.button("生成 Word 报告", type="primary"):
+        try:
+            images = [(figures[key][0], image_bytes(figures[key][1], "png")) for key in selected_figures]
+            output = word_report(title.strip() or "PlantLab-GeneMiner 分析报告", background, notes,
+                                 record, metrics, {key: tables[key] for key in chosen}, images)
+        except Exception:
+            st.error("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。")
+        else:
+            st.download_button("下载 Word 报告", output, "plantlab_geneminer_report.docx",
+                               "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                               on_click="ignore")
+
+
 def about():
-    st.title("关于平台")
-    st.write("PlantLab-GeneMiner V1.0 · 面向植物科学研究的候选基因筛选工具。")
+    st.title("PlantLab-GeneMiner")
+    st.subheader("植物功能基因挖掘与多维证据分析平台")
+    st.write("面向植物生物信息学，为教学和科研提供可复查的候选基因筛选、数据可视化与结果交流工作流。")
+    st.subheader("当前功能")
+    cards = (
+        ("FASTA 序列分析", "检查序列、统计长度和核酸 GC 含量。"),
+        ("BLAST 结果筛选", "映射字段、设置阈值并比较候选命中。"),
+        ("成对序列比对", "对两条核酸或蛋白质序列执行全局或局部比对。"),
+        ("结果可视化", "比较分布、覆盖度与各 Query 的候选数量。"),
+        ("图表编辑与导出", "编辑 Plotly 样式并下载图像、HTML、CSV 或 JSON 配置。"),
+        ("分析记录与报告", "导出可复查的参数、候选表和带图的 Word 报告。"),
+    )
+    for index in range(0, len(cards), 3):
+        for column, (title, description) in zip(st.columns(3), cards[index:index + 3]):
+            with column.container(border=True):
+                st.markdown(f"**{title}**")
+                st.write(description)
+    st.subheader("开始使用")
+    st.write("适合植物科学专业本科生、研究生、生物信息学初学者及科研人员。")
+    st.write("上传数据 → 检查数据 → 设置参数 → 执行分析 → 查看结果 → 导出文件")
+    st.subheader("项目信息")
+    st.write(f"当前版本 {VERSION} · 新增成对比对、图表编辑与 Word 报告")
+    st.caption("开发者信息待补充。")
+    st.link_button("GitHub 项目", "https://github.com/xsun27674-commits/PlantLab-GeneMiner")
+    st.link_button("问题反馈", "https://github.com/xsun27674-commits/PlantLab-GeneMiner/issues")
+    st.subheader("使用须知")
     st.info(NOTICE)
-    st.write("平台读取已有 BLAST 表格。上传数据与分析记录保存在当前 Streamlit 会话，需下载以长期保存。")
-    st.write("模拟教学数据用于演示软件操作，不能用于生物学推断。")
+    st.write("上传内容及分析结果仅在当前会话中处理。模拟教学数据不用于真实生物学推断。多维证据综合评分和 BLAST+ 数据库搜索列入后续开发。")

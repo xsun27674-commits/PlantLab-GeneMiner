@@ -137,18 +137,32 @@ class Thresholds:
     coverage: float | None = None
 
 
-def filter_hits(hits: pd.DataFrame, thresholds: Thresholds) -> pd.DataFrame:
+def threshold_checks(hits: pd.DataFrame, thresholds: Thresholds) -> pd.DataFrame:
     maximum = parse_evalue(thresholds.evalue)
-    keep = (
-        (hits["pident"] >= thresholds.identity)
-        & hits["evalue"].map(lambda value: parse_evalue(value) <= maximum)
-        & (hits["length"] >= thresholds.length)
-    )
+    checks = pd.DataFrame({
+        "pident 低于阈值": hits["pident"] >= thresholds.identity,
+        "E-value 高于阈值": hits["evalue"].map(lambda value: parse_evalue(value) <= maximum),
+        "比对长度低于阈值": hits["length"] >= thresholds.length,
+    }, index=hits.index)
     if thresholds.coverage_field is not None and thresholds.coverage is not None:
         if thresholds.coverage_field not in COVERAGE or thresholds.coverage_field not in hits:
             raise ValueError("所选 Query coverage 字段不存在。")
-        keep &= hits[thresholds.coverage_field] >= thresholds.coverage
-    return hits.loc[keep].copy()
+        coverage = hits[thresholds.coverage_field]
+        checks["覆盖度低于阈值"] = coverage.isna() | (coverage >= thresholds.coverage)
+        checks["覆盖度缺失"] = coverage.notna()
+    return checks
+
+
+def filter_hits(hits: pd.DataFrame, thresholds: Thresholds) -> pd.DataFrame:
+    return hits.loc[threshold_checks(hits, thresholds).all(axis=1)].copy()
+
+
+def rejection_reasons(hits: pd.DataFrame, thresholds: Thresholds) -> pd.DataFrame:
+    checks = threshold_checks(hits, thresholds)
+    rejected = checks.loc[~checks.all(axis=1)]
+    reasons = ["；".join(name for name, passed in zip(checks, row) if not passed)
+               for row in rejected.itertuples(index=False, name=None)]
+    return hits.loc[rejected.index, ["qseqid", "sseqid"]].assign(排除原因=reasons)
 
 
 def best_hits(hits: pd.DataFrame) -> pd.DataFrame:

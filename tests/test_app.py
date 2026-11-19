@@ -11,12 +11,14 @@ def test_example_workflow_and_navigation():
 
     page = app.sidebar.radio(key="page")
     page.set_value("FASTA 序列分析").run()
+    assert not app.exception
     app.checkbox(key="fasta_example").check().run()
     app.radio(key="sequence_type").set_value("nucleotide").run()
     assert not app.exception
     assert len(app.dataframe[0].value) == 6
 
     page.set_value("BLAST 候选筛选").run()
+    assert not app.exception
     app.checkbox(key="blast_example").check().run()
     app.text_input(key="evalue").set_value("0").run()
     assert not app.exception
