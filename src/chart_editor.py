@@ -128,8 +128,13 @@ def static_images_enabled():
     return os.environ.get("GENEMINER_LIGHTWEIGHT_PREVIEW") != "1"
 
 
-def image_bytes(figure, format):
-    return pio.to_image(figure, format=format, scale=2 if format == "png" else 1)
+def image_bytes(figure, format, scale=None):
+    return pio.to_image(figure, format=format, scale=scale or (2 if format == "png" else 1))
+
+
+def export_filename(value, fallback):
+    value = re.sub(r"[^\w.-]", "_", value.strip())[:80].strip(".")
+    return value or fallback
 
 
 def chart_panel(key, builder, data, defaults, groupable=False):
@@ -203,30 +208,40 @@ def chart_panel(key, builder, data, defaults, groupable=False):
     st.session_state[style_key] = style
     figure = apply_style(builder(style.query_colors if groupable else False), style)
     st.session_state.setdefault("report_figures", {})[key] = (style.title, figure)
-    st.plotly_chart(figure, key=f"plot_{key}", width="content")
-    with st.expander("下载此图"):
+    with st.expander("图片导出"):
+        filename = export_filename(
+            st.text_input("文件名", key, max_chars=80, key=f"filename_{key}"), key)
+        scale = st.slider("PNG 倍率", 1, 3, 2, key=f"scale_{key}")
+        formats = ["png", "svg", "pdf"] if static_images_enabled() else ["png", "svg"]
+        fmt = st.selectbox("图片格式", formats, key=f"format_{key}")
+        if not static_images_enabled():
+            st.caption("选择 PNG 或 SVG 后，点击图表工具栏的相机图标下载。")
+    st.plotly_chart(figure, key=f"plot_{key}", width="content", config={
+        "displaylogo": False, "toImageButtonOptions": {
+            "format": fmt if fmt != "pdf" else "png", "filename": filename,
+            "width": style.width, "height": style.height, "scale": scale if fmt != "svg" else 1,
+        },
+    })
+    with st.expander("高级导出"):
         exports = st.columns(3)
         exports[0].download_button("交互 HTML", pio.to_html(figure, full_html=True, include_plotlyjs=True),
-                                   f"{key}.html", "text/html", key=f"html_{key}")
-        exports[1].download_button("图表数据 CSV", csv_bytes(data), f"{key}.csv", "text/csv", key=f"csv_{key}")
+                                   f"{filename}.html", "text/html", key=f"html_{key}")
+        exports[1].download_button("图表数据 CSV", csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button("样式 JSON", json.dumps(asdict(style), ensure_ascii=False, indent=2),
-                                   f"{key}.json", "application/json", key=f"json_{key}")
-        if not static_images_enabled():
-            st.caption("轻量预览提供 HTML、CSV 和 JSON。PNG、SVG 和 PDF 请在本地或 Docker 版本导出。")
-            return
-        fmt = st.selectbox("静态图格式", ["png", "svg", "pdf"], key=f"format_{key}")
+                                   f"{filename}.json", "application/json", key=f"json_{key}")
+    if static_images_enabled():
         asset_key = f"image_{key}"
-        signature = (fmt, figure.to_json())
+        signature = (fmt, scale, figure.to_json())
         if st.button("生成静态图", key=f"render_{key}"):
             st.session_state.pop(asset_key, None)
             try:
-                st.session_state[asset_key] = (signature, image_bytes(figure, fmt))
+                st.session_state[asset_key] = (signature, image_bytes(figure, fmt, scale if fmt == "png" else 1))
             except Exception:
                 st.error("静态图生成失败。请确认 Kaleido 和 Chrome/Chromium 可正常运行。")
         asset = st.session_state.get(asset_key)
         if asset and asset[0] == signature:
             mime = {"png": "image/png", "svg": "image/svg+xml", "pdf": "application/pdf"}[fmt]
-            st.download_button(f"下载 {fmt.upper()}", asset[1], f"{key}.{fmt}", mime, key=f"image_download_{key}")
+            st.download_button(f"下载 {fmt.upper()}", asset[1], f"{filename}.{fmt}", mime, key=f"image_download_{key}")
 
 
 def reset_controls(key, style):
