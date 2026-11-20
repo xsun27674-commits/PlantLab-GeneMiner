@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>PlantLab alignment heatmap</title>
+<style>body { margin: 0; } iframe { display: block; border: 0; width: 100%; }</style>
+<iframe title="Alignment heatmap" sandbox="allow-scripts allow-downloads"></iframe>
+<script>
+const frame = document.querySelector("iframe");
+let content;
+const send = (type, data) =>
+  window.parent.postMessage({isStreamlitMessage: true, type, ...data}, "*");
+window.addEventListener("message", event => {
+  if (event.source === window.parent && event.data?.type === "streamlit:render") {
+    const {html, height} = event.data.args;
+    if (content !== html) {
+      content = html;
+      const prefix = location.pathname.split("/component/")[0];
+      frame.srcdoc = html.replaceAll('src="./component/', 'src="' + location.origin + prefix + '/component/');
+    }
+    frame.style.height = height + "px";
+    send("streamlit:setFrameHeight", {height});
+  } else if (event.source === frame.contentWindow && event.data?.type === "plantlab_pair") {
+    send("streamlit:setComponentValue", {
+      value: {row: event.data.row, id: Date.now()}, dataType: "json"
+    });
+  }
+});
+send("streamlit:componentReady", {apiVersion: 1});
+</script>
+</html>

@@ -8,7 +8,7 @@ VERSION = "3.0.0"
 def build_record(metadata, fasta_result=None, blast_result=None, pairwise_record=None):
     record = {"软件版本": VERSION, "科研信息": dict(metadata)}
     if fasta_result:
-        record["FASTA"] = {key: value for key, value in fasta_result.items() if key != "key"}
+        record["FASTA"] = {key: value for key, value in fasta_result.items() if key not in {"key", "统计数据"}}
     if blast_result:
         record["BLAST"] = {
             "上传文件名称": blast_result["name"], "文件来源": blast_result["origin"],

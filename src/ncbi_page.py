@@ -10,6 +10,7 @@ from src.i18n import tr
 from src.ncbi_dataset import COLUMNS, INTERNAL, UNKNOWN, parse_ncbi_zip, sequence_quality
 from src.sequence_input import MAX_BYTES, MAX_ROWS, table_to_fasta, write_sequence_xlsx
 from src.timing import session_result
+from src.project_data import clean_metadata, display_labels, invalidate_sequence_results, table_metadata
 
 NCBI_DATASETS_URL = "https://www.ncbi.nlm.nih.gov/datasets/gene/"
 
@@ -24,13 +25,19 @@ def ncbi_source(name, data):
     original = session_result("ncbi_zip", digest, parse_ncbi_zip, data)
     saved = st.session_state.get("sequence_ncbi_table")
     if saved and saved[0] == digest:
-        original = saved[1]
+        original = saved[1].copy()
+        if "_original_sequence_id" not in original:
+            original["_original_sequence_id"] = original["Sequence ID"]
+    def invalidate_applied():
+        if st.session_state.pop("sequence_ncbi_applied", None):
+            invalidate_sequence_results()
+
     mode = st.radio(tr("转录本范围"), ("all", "selected"), horizontal=True, key=f"ncbi_transcripts_{digest}",
-                    format_func={"all": tr("保留全部转录本"), "selected": tr("选择转录本")}.get)
+                    format_func={"all": tr("保留全部转录本"), "selected": tr("选择转录本")}.get, on_change=invalidate_applied)
     selection = []
     if mode == "selected":
         options = sorted(set(original["_transcript"]) - {""})
-        selection = st.multiselect(tr("选择已核实的转录本编号"), options, key=f"ncbi_accessions_{digest}")
+        selection = st.multiselect(tr("选择已核实的转录本编号"), options, key=f"ncbi_accessions_{digest}", on_change=invalidate_applied)
         if not selection:
             st.info(tr("请选择转录本，或切换为保留全部。"))
             return None
@@ -40,15 +47,26 @@ def ncbi_source(name, data):
 
     draft = st.session_state.get("sequence_ncbi_selection")
     if mode == "selected" and draft and draft[:2] == (digest, tuple(selection)):
-        originals = draft[2]
+        originals = draft[2].copy()
+        if "_original_sequence_id" not in originals:
+            originals["_original_sequence_id"] = originals["Sequence ID"]
     revision = st.session_state.get("sequence_ncbi_revision", 0)
     editor_id = sha256(repr((digest, mode, selection, revision)).encode()).hexdigest()
     st.caption(tr("可批量编辑序列编号和序列，或删除行。基因、物种与转录本编号取自原始记录。"))
+    preview = originals.copy()
+    label = "Display Name"
+    preview.insert(0, label, display_labels([
+        {"gene": clean_metadata(str(gene)), "accession": clean_metadata(str(accession)),
+         "original": original or identifier}
+        for gene, accession, original, identifier in originals[
+            ["Gene", "Accession", "_original_sequence_id", "Sequence ID"]
+        ].itertuples(index=False, name=None)
+    ]))
     edited = st.data_editor(
-        originals, key=f"ncbi_grid_{editor_id}", hide_index=True, num_rows="dynamic",
-        disabled=["Gene", "Species", "Accession", "Length (bp)", *INTERNAL],
-        column_config={key: None for key in INTERNAL}, width="stretch",
-    ).copy()
+        preview, key=f"ncbi_grid_{editor_id}", hide_index=True, num_rows="dynamic",
+        disabled=[label, "Gene", "Species", "Accession", "Length (bp)", *INTERNAL],
+        column_config={**{key: None for key in INTERNAL}, label: tr("显示名称")}, width="stretch",
+    ).drop(columns=label)
     edited[INTERNAL] = edited[INTERNAL].fillna("")
     for field in ("Gene", "Species", "Accession"):
         edited[field] = edited[field].fillna(UNKNOWN)
@@ -61,6 +79,7 @@ def ncbi_source(name, data):
     if list(edited.fillna("").itertuples(index=False, name=None)) != list(
         originals.fillna("").itertuples(index=False, name=None)
     ):
+        invalidate_applied()
         if mode == "all":
             st.session_state["sequence_ncbi_table"] = (digest, edited)
         else:
@@ -80,7 +99,8 @@ def ncbi_source(name, data):
         st.warning(tr("请检查下列空值、重复编号或非法字符。"))
         st.dataframe(quality.loc[flagged], hide_index=True)
 
-    public = edited[COLUMNS]
+    public = edited[COLUMNS].copy()
+    public["Original Sequence ID"] = edited["_original_sequence_id"]
     export_signature = sha256(repr(tuple(public.itertuples(index=False, name=None))).encode()).digest()
     excel, csv, analyze = st.columns(3)
     if not public.empty:
@@ -99,9 +119,11 @@ def ncbi_source(name, data):
     clicked = analyze.button(tr("开始序列分析 →"), type="primary", disabled=public.empty)
     applied = st.session_state.get("sequence_ncbi_applied")
     if clicked:
+        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"]), include_source=True)
         canonical = table_to_fasta(public, "Sequence ID", "Sequence")
         st.session_state["sequence_ncbi_applied"] = (digest, export_signature, canonical)
         return name, canonical, "NCBI Datasets"
     if applied and applied[:2] == (digest, export_signature):
+        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"]), include_source=True)
         return name, applied[2], "NCBI Datasets"
     return None

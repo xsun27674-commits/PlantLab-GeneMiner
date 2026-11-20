@@ -102,7 +102,7 @@ def word_report(title, background, notes, record, metrics, tables, figures, lang
             if frame.empty:
                 doc.add_paragraph(text["empty"])
                 continue
-            limit = 25 if mode == "concise" else MAX_TABLE_ROWS
+            limit = 25 if mode == "concise" else 100 if name == "本地比对候选筛选" else MAX_TABLE_ROWS
             if len(frame) > limit:
                 doc.add_paragraph(text["truncated"].format(limit=limit, total=len(frame)))
             table = doc.add_table(rows=1, cols=len(frame.columns))

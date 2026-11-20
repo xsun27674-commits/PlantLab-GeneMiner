@@ -21,7 +21,7 @@ MAX_MEMBERS = 512
 MAX_RECORDS = 5000
 UNKNOWN = "待核实"
 COLUMNS = ["Sequence ID", "Gene", "Species", "Accession", "Length (bp)", "Sequence"]
-INTERNAL = ["_gene_id", "_transcript"]
+INTERNAL = ["_gene_id", "_transcript", "_original_sequence_id"]
 REFSEQ_RNA = r"(?:NM|NR|XM|XR)_[0-9]+(?:\.[0-9]+)?"
 REFSEQ_PROTEIN = r"(?:NP|XP|YP|WP|AP|ZP)_[0-9]+(?:\.[0-9]+)?"
 TAG = re.compile(r"\[([^=\]]+)=([^\]]*)\]")
@@ -167,7 +167,7 @@ def parse_ncbi_zip(data):
                     gene, name, species, transcript = match_record(record, index)
                     sequence = str(record.seq)
                     rows.append((record.id, name or UNKNOWN, species or UNKNOWN, transcript or UNKNOWN,
-                                 len(sequence), sequence, gene, transcript))
+                                 len(sequence), sequence, gene, transcript, record.id))
                     if len(rows) > MAX_RECORDS:
                         raise ValueError("NCBI ZIP 最多支持 5,000 条 CDS。")
     except (BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError, UnicodeError, CompressionError) as exc:

@@ -24,10 +24,11 @@ from src.blast_utils import (
     normalize_hits, parse_evalue, read_blast, rejection_reasons, suggest_mapping,
 )
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
+from src.batch_alignment_page import export_metadata
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
-from src.project_data import classify_table, clear_sequence_project, project_status, register_sequences, sequence_columns
+from src.project_data import classify_table, clear_sequence_project, current_candidates, invalidate_sequence_results, project_status, record_info, record_labels, register_sequences, sequence_columns, table_metadata
 from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -51,19 +52,27 @@ def source(kind, extensions):
     widget_key = f"{kind}_upload_{st.session_state.get('fasta_upload_revision', 0)}" if kind == "fasta" else f"{kind}_upload"
     cache_key = f"{kind}_source"
 
+    def invalidate_source():
+        if kind == "fasta":
+            invalidate_sequence_results()
+            st.session_state.pop("sequence_ncbi_applied", None)
+        else:
+            st.session_state.pop("blast_result", None)
+            st.session_state.pop("last_report", None)
+            for key in list(st.session_state.get("report_figures", {})):
+                if key.startswith("blast_"):
+                    st.session_state["report_figures"].pop(key)
+
     def remember_upload():
         upload = st.session_state[widget_key]
-        if upload is None:
-            st.session_state[cache_key] = None
-            if kind == "blast":
-                st.session_state.pop("blast_result", None)
-                for key in list(st.session_state.get("report_figures", {})):
-                    if key.startswith("blast_"):
-                        st.session_state["report_figures"].pop(key)
-            return
-        content = upload.getvalue()
-        origin = "模拟教学数据" if content == path.read_bytes() else "用户上传"
-        st.session_state[cache_key] = (upload.name, content, origin)
+        selected = None
+        if upload is not None:
+            content = upload.getvalue()
+            origin = "模拟教学数据" if content == path.read_bytes() else "用户上传"
+            selected = (upload.name, content, origin)
+        if selected != st.session_state.get(cache_key):
+            invalidate_source()
+        st.session_state[cache_key] = selected
 
     upload = st.file_uploader(f"{tr('上传')} {tr(label)}", type=extensions, key=widget_key,
                               on_change=remember_upload)
@@ -72,11 +81,7 @@ def source(kind, extensions):
         st.caption(f'{tr("当前文件")} · {cached[0]}')
         if st.button(tr("清除当前文件"), key=f"clear_{kind}"):
             st.session_state.pop(cache_key)
-            if kind == "blast":
-                st.session_state.pop("blast_result", None)
-                for key in list(st.session_state.get("report_figures", {})):
-                    if key.startswith("blast_"):
-                        st.session_state["report_figures"].pop(key)
+            invalidate_source()
             return None
     if cached is not None and len(cached[1]) > 10 * 1024 * 1024:
         st.error(tr("文件超过 10 MB，请拆分后再上传。"))
@@ -105,6 +110,7 @@ def run_time():
 
 def sequence_source():
     st.session_state.pop("_sequence_table_is_cds", None)
+    st.session_state.pop("_sequence_input_metadata", None)
     ncbi_link()
     mode = st.radio(tr("序列输入方式"), ("upload", "grid"), key="sequence_input_mode",
                     format_func={"upload": tr("上传文件"), "grid": tr("在线表格")}.get,
@@ -119,6 +125,7 @@ def sequence_source():
         rows = session_result("sequence_table", (name, sha256(data).digest()), read_sequence_table, name, data)
         options = list(rows.columns)
         kind, _ = classify_table(options)
+        st.session_state["_sequence_input_metadata"] = table_metadata(rows, include_source=True)
         if kind in ("blast", "incomplete_blast", "pairwise"):
             raise ValueError("该表不是序列数据。请上传包含 Sequence ID 和 Sequence 的表格。")
         ids, sequences = sequence_columns(options)
@@ -172,7 +179,7 @@ def sequence_source():
     return st.session_state.get("sequence_grid_source")
 
 
-def next_step(label, destination, *, status=None, summary=None):
+def next_step(label, destination, *, status=None, summary=None, result_view=None):
     with st.container(key="workflow_step"):
         message, action = st.columns([3, 2], vertical_alignment="center")
         with message:
@@ -182,6 +189,10 @@ def next_step(label, destination, *, status=None, summary=None):
                 st.caption(tr(summary))
         with action:
             if st.button(tr(label), key=f"workflow_next_{destination}", type="primary"):
+                if result_view:
+                    st.session_state["result_view"] = result_view
+                if destination == "成对序列比对":
+                    st.session_state["alignment_setting_view"] = "当前项目"
                 navigate(destination)
 
 
@@ -214,23 +225,26 @@ def fasta():
     else:
         sequence_type = st.radio(tr("序列类型"), labels, index=None,
                                  format_func=lambda key, translate=translator(): translate(labels[key]),
-                                 horizontal=True, key="sequence_type")
+                                 horizontal=True, key="sequence_type", on_change=invalidate_sequence_results)
     if selected is None or sequence_type is None:
         st.info(tr("请载入 FASTA 文件并明确选择序列类型。"))
         return
     name, data, origin = selected
-    fingerprint = (name, sha256(data).hexdigest(), origin, sequence_type)
+    metadata = st.session_state.get("_sequence_input_metadata", ())
+    fingerprint = (name, sha256(data).hexdigest(), origin, sequence_type,
+                   sha256(repr(metadata).encode()).hexdigest())
     try:
         frame = session_result("fasta_parse", fingerprint, analyze_fasta, data, sequence_type)
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
-    register_sequences(fingerprint, name, origin, sequence_type, data)
+    register_sequences(fingerprint, name, origin, sequence_type, data, metadata)
     timestamp = previous["分析时间（UTC）"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["fasta_result"] = {
         "key": fingerprint, "上传文件名称": name, "文件来源": origin, "序列类型": labels[sequence_type],
         "分析时间（UTC）": timestamp, "序列数": len(frame),
         "最短序列": int(frame["序列长度"].min()), "最长序列": int(frame["序列长度"].max()),
+        "统计数据": frame,
         "重复 ID 记录数": int(frame["重复 ID"].sum()),
         "非法字符记录数": int(frame["非法字符"].ne("").sum()),
     }
@@ -246,18 +260,24 @@ def fasta():
         st.warning(tr("请检查表中标记的重复 ID、非法字符和空序列。"))
     if sequence_type == "nucleotide":
         st.caption(tr("GC 使用 Biopython 的模糊碱基排除规则，S 与 W 按已知 GC 类别计入。无法计算时留空。"))
-    st.dataframe(display_frame(frame.assign(**{tr("行号"): range(1, len(frame) + 1)})), width="stretch", hide_index=True)
+    project = st.session_state["project_sequences"]
+    named = frame.assign(**{tr("行号"): range(1, len(frame) + 1)})
+    named.insert(1, "显示名称", record_labels(project))
+    identifiers = [record_info(project, idx) for idx in range(len(frame))]
+    for key, label in (("original", "Original Sequence ID"), ("gene", "Gene"), ("accession", "Accession"), ("id", "Internal ID")):
+        named[label] = [item[key] or tr("待核实") for item in identifiers]
+    st.dataframe(display_frame(named), width="stretch", hide_index=True)
     frame = frame.assign(序列类型=labels[sequence_type])
     plot_distribution(frame, "fasta_length", "序列长度", "序列长度", "序列 ID")
     if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
         plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
-    st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(frame.drop(columns="序列类型")), "fasta_statistics.csv", "text/csv")
+    st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(named.assign(**{"Source file": name, "Origin": origin})), "fasta_statistics.csv", "text/csv")
     if sequence_type == "nucleotide" and len(frame) >= 2:
         next_step("下一步：本地序列比对 →", "成对序列比对",
                   status="序列分析已完成 ✓",
                   summary="当前序列已保存到项目，可直接进行本地比对。")
     elif st.session_state.get("blast_result"):
-        next_step("下一步：结果可视化 →", "结果可视化", status="序列分析已完成 ✓")
+        next_step("下一步：结果可视化 →", "结果可视化", status="序列分析已完成 ✓", result_view="blast")
     else:
         st.caption(tr("当前序列已保存。批量比对需要至少两条核酸记录。"))
 
@@ -278,8 +298,6 @@ def blast():
     st.title(tr("BLAST 候选筛选"))
     st.info(tr(NOTICE))
     project_status()
-    if st.button(tr("前往本地序列比对")):
-        navigate("成对序列比对")
     st.link_button(tr("前往 NCBI BLAST 官方页面 ↗"), "https://blast.ncbi.nlm.nih.gov/Blast.cgi")
     previous = st.session_state.get("blast_result")
     figures = st.session_state.setdefault("report_figures", {})
@@ -289,7 +307,7 @@ def blast():
         existing = st.session_state.get("blast_result")
         if existing:
             st.dataframe(existing["filtered"], hide_index=True)
-            next_step("下一步：结果可视化 →", "结果可视化")
+            next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
         else:
             st.info(tr("当前项目尚无 BLAST 命中结果。您可以使用本地序列比对功能，或上传外部 BLAST 结果。"))
         return
@@ -423,7 +441,7 @@ def blast():
     count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(hits, thresholds), width="stretch", hide_index=True)
-    next_step("下一步：结果可视化 →", "结果可视化")
+    next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
 
 
 @st.fragment
@@ -441,9 +459,24 @@ def plot_distribution(frame, key, field, title, id_field):
 
 def visualization():
     st.title(tr("结果可视化"))
+    project_status()
     result = st.session_state.get("blast_result")
-    if result is None:
-        st.info(tr("请先在 BLAST 候选筛选页载入表格并完成筛选。"))
+    local = current_candidates()
+    if local is None and result is None:
+        st.info(tr("完成本地比对候选筛选，或导入并筛选 BLAST 命中后，即可绘图。"))
+        if st.session_state.get("batch_alignment") and st.button(tr("本地比对候选筛选")):
+            navigate("本地比对候选筛选")
+        return
+    options = (["local"] if local else []) + (["blast"] if result else [])
+    if st.session_state.get("result_view") not in options:
+        st.session_state["result_view"] = options[0]
+    view = st.radio(tr("结果来源"), options, horizontal=True, key="result_view",
+                    format_func=lambda item: tr("本地比对候选筛选" if item == "local" else "BLAST 候选筛选"))
+    origin = "本地比对候选筛选" if view == "local" else "BLAST 候选筛选"
+    if st.button(tr("← 返回候选筛选")):
+        navigate(origin)
+    if view == "local":
+        local_visualization(local)
         return
     hits = result["filtered"]
     st.caption(f'{result["name"]} · {tr(result["origin"])} · {tr("当前筛选结果")}')
@@ -458,6 +491,19 @@ def visualization():
         next_step("下一步：导出分析报告 →", "分析记录与导出")
         return
     detail_plot(hits)
+    next_step("下一步：导出分析报告 →", "分析记录与导出")
+
+
+def local_visualization(local):
+    hits = local["results"]
+    st.caption(f'{tr("本地候选对数")} · {len(hits):,} / {local["before"]:,}')
+    comparison = pd.DataFrame({"阶段": ["筛选前", "筛选后"], "命中数量": [local["before"], len(hits)]})
+    chart_panel("local_candidate_comparison", lambda _: charts.hit_comparison(local["before"], len(hits)), comparison,
+                ChartStyle("本地比对筛选前后对数", "阶段", "记录数", legend=False, legend_title="", category_colors=True))
+    if hits.empty:
+        st.info(tr("当前筛选没有保留本地候选对。"))
+    else:
+        plot_distribution(hits, "local_candidate_identity", "Identity (%)", "本地候选序列一致性", "Subject Name")
     next_step("下一步：导出分析报告 →", "分析记录与导出")
 
 
@@ -484,7 +530,10 @@ def detail_plot(hits):
 
 def records():
     st.title(tr("分析记录与导出"))
+    project_status()
     blast_result = st.session_state.get("blast_result")
+    if (current_candidates() or blast_result) and st.button(tr("← 返回结果可视化")):
+        navigate("结果可视化")
     metadata = {}
     for label in (*METADATA, "数据库登录号"):
         if not blast_result and label in ("BLAST 程序及版本", "参考数据库及版本"):
@@ -496,6 +545,18 @@ def records():
     fasta_result = st.session_state.get("fasta_result")
     blast_result = st.session_state.get("blast_result")
     pairwise_record = st.session_state.get("pairwise_record")
+    batch = st.session_state.get("batch_alignment")
+    project = st.session_state.get("project_sequences")
+    if batch and project and batch["key"][0] == project["key"]:
+        pairwise_record = {**export_metadata(project, batch), "Algorithm": "Biopython PairwiseAligner"}
+        candidates = current_candidates()
+        if candidates:
+            pairwise_record.update({
+                "最低一致性 (%)": candidates["minimum_identity"], "最短比对长度": candidates["minimum_length"],
+                "最低比对得分": candidates["minimum_score"], "本地候选对数": candidates["count"],
+                "Reference Internal ID": candidates["reference"], "Exclude self": candidates["exclude_self"],
+                "Sort": candidates["sort"], **{f"Filter {key}": val for key, val in candidates["thresholds"].items()},
+            })
     record = build_record(metadata, fasta_result, blast_result, pairwise_record)
     save_button()
     st.subheader(tr("当前分析记录"))
@@ -504,7 +565,7 @@ def records():
             st.markdown(f"**{tr(module)}**")
             st.caption(" · ".join(f"{tr(key)}: {tr(value)}" for key, value in record[module].items()
                                   if key in ("上传文件名称", "序列数", "最短序列", "最长序列", "原始命中数",
-                                             "筛选后命中数", "保留比例", "比对列数")))
+                                             "筛选后命中数", "保留比例", "比对列数", "Comparisons", "本地候选对数")))
     with st.expander(tr("原始 JSON")):
         st.json(record)
     st.download_button(tr("下载分析记录 JSON"), json_bytes(record), "analysis.json", "application/json")
@@ -544,12 +605,23 @@ def report_section(record, blast_result):
             st.caption(tr("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。"))
         metrics = {}
         tables = {}
+        candidate_result = current_candidates()
+        if candidate_result:
+            hits = candidate_result["results"]
+            columns = ("Query", "Subject")
+            table = pd.DataFrame({
+                side: hits[f"{side} Name"] + "\n" + hits[f"{side} Original Sequence ID"] + "\n" + hits[f"{side} Internal ID"]
+                for side in columns
+            }).assign(**{column: hits[column] for column in ("Identity (%)", "Alignment Length", "Alignment Score", "Gaps")})
+            tables["本地比对候选筛选"] = table
+            metrics["本地候选对数"] = candidate_result["count"]
         if blast_result:
             hits = blast_result["filtered"]
-            tables = {"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
-                      "最佳命中": blast_result["best"]}
+            tables.update({"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
+                           "最佳命中": blast_result["best"]})
             total = blast_result["before"]
-            metrics = {"原始命中数": total, "筛选后命中数": len(hits), "保留比例": f"{len(hits)/total:.1%}"}
+            metrics.update({"原始命中数": total, "筛选后命中数": len(hits),
+                            "保留比例": f"{len(hits)/total:.1%}" if total else "0.0%"})
             if not hits.empty:
                 coverage_fields = coverage_options(hits)
                 if coverage_fields:
@@ -561,7 +633,8 @@ def report_section(record, blast_result):
                                 "比特得分中位数": f"{hits['bitscore'].median():g}"})
         chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
         submitted = st.form_submit_button(tr("准备 Word 报告"), type="primary")
-    signature = sha256(repr((record, title, background, notes, language, mode, chosen,
+    signature = sha256(repr((record, title, background, notes, language, mode,
+                             [(key, tables[key].to_json()) for key in chosen],
                              [(key, figures[key][1].to_json()) for key in selected_figures])).encode()).digest()
     if submitted:
         try:
