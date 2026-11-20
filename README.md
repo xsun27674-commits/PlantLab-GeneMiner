@@ -37,7 +37,7 @@ Windows PowerShell 可用 `.venv\Scripts\Activate.ps1` 激活环境。打开终�
 
 ## Streamlit Community Cloud
 
-**公开网址**：部署完成并验证后，在此填写 Community Cloud 分配的地址。
+**公开网址**：[PlantLab-GeneMiner](https://plantlab-geneminer.streamlit.app/)（应用可用性以实际访问结果为准）。
 
 **备用入口**：[V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。
 
@@ -49,12 +49,12 @@ Windows PowerShell 可用 `.venv\Scripts\Activate.ps1` 激活环境。打开终�
    | Repository | `xsun27674-commits/PlantLab-GeneMiner` |
    | Branch | `community-cloud` |
    | Main file path | `app.py` |
-   | Advanced settings → Python version | `3.11` |
+   | Advanced settings → Python version | `3.11`（也支持已部署应用使用的 `3.14`） |
 
 3. 公开游客版的 **Secrets** 留空，使用平台分配的网址或为此应用选择可用的子域名，再点击 **Deploy**。
 4. 应用就绪后，用无痕窗口打开地址，确认游客可直接进入首页。用模拟数据验证上传、成对比对、BLAST 搜索及下载，然后公布实际网址。
 
-仓库根目录的 `packages.txt` 让 Community Cloud 通过 APT 安装 `ncbi-blast+` 和 `util-linux`。前者提供 `blastn` 与 `makeblastdb`，后者提供 Linux 资源限制工具 `prlimit`。`requirements.txt` 沿用固定的 Python 依赖版本，`.streamlit/config.toml` 保留 10 MiB 上传上限。图表卡片的 PNG/SVG 由浏览器渲染，公开部署无需安装服务端 Chromium。Docker 和 Binder 继续使用各自的依赖清单及启动配置。
+仓库根目录的 `packages.txt` 让 Community Cloud 通过 APT 安装 `ncbi-blast+` 和 `util-linux`。前者提供 `blastn` 与 `makeblastdb`，后者提供 Linux 资源限制工具 `prlimit`。`requirements.txt` 在 Python 3.11 上沿用原有固定版本，在 Python 3.14 上使用 Streamlit 1.52.0 和含 Linux wheel 的 PyArrow 22.0.0。`.streamlit/config.toml` 保留 10 MiB 上传上限。图表卡片的 PNG/SVG 由浏览器渲染，公开部署无需安装服务端 Chromium。Docker 和 Binder 继续使用各自的依赖清单及启动配置。
 
 可上传 FASTA、NCBI Datasets CDS ZIP、UTF-8 CSV 或 XLSX 序列表。外部 BLAST 支持标准 outfmt 6 以及带表头的 CSV、TSV、XLSX。内置 BLAST+ 只搜索用户为当前任务选中的目标序列，搜索范围不含完整 NCBI 数据库。
 

@@ -1,4 +1,7 @@
-streamlit==1.51.0
+streamlit==1.51.0; python_version < "3.14"
+# Streamlit 1.51 requires PyArrow <22, which has no CPython 3.14 Linux wheel.
+streamlit==1.52.0; python_version >= "3.14"
+pyarrow==22.0.0; python_version == "3.14"
 biopython==1.86
 pandas==2.3.3
 numpy==2.3.5
