@@ -54,3 +54,42 @@ def test_horizontal_sequence_labels_remain_readable_and_keep_all_points():
         assert list(figure.layout.yaxis.tickvals) == labels
         assert [unescape(tick.replace("<br>", "")) for tick in figure.layout.yaxis.ticktext] == labels
         assert figure.layout.yaxis.range[0] == min(50, count) - .5
+
+
+def test_fasta_scatter_keeps_numeric_order_and_full_hover():
+    rows = pd.DataFrame({"Name": [f"CDS_{i}" for i in range(63)], "Sequence ID": "original",
+                         "Gene": "SIM", "Accession": "SIM_1", "length": list(range(63))})
+    figure = apply_style(distribution(rows, "length", "Length", "Name", "散点图",
+                                      hover=("Sequence ID", "Gene", "Accession"), sequence_scatter=True),
+                         ChartStyle("Length", "序列编号", "Length"))
+    fit_category_axis(figure)
+    assert list(figure.data[0].x) == list(range(1, 64))
+    assert figure.layout.xaxis.showticklabels is False and figure.layout.xaxis.title.text == "序列编号"
+    assert set(figure.data[0].customdata[0]) == {"original", "SIM", "SIM_1"}
+
+
+def test_query_name_only_and_id_fallback():
+    from src.visualization import query_bars
+
+    counts = pd.DataFrame({"Query Name": ["MLH1", "HEI10"], "候选数量": [2, 3]})
+    assert {trace.name for trace in query_bars(counts, grouped=True).data} == {"MLH1", "HEI10"}
+    for mode in ("柱状图", "散点图", "直方图"):
+        fig = distribution(counts, "候选数量", "Count", "Query Name", mode, query_colors=True)
+        assert {trace.name for trace in fig.data} == {"MLH1", "HEI10"}
+    counts["qseqid"] = ["query1", "query2"]
+    counts["Query Name"] = ["MLH1", ""]
+    assert {trace.name for trace in query_bars(counts, grouped=True).data} == {"MLH1", "query2"}
+
+
+def test_chart_with_missing_query_columns_shows_warning():
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_string("""
+import pandas as pd
+from src.chart_editor import ChartStyle, chart_panel
+from src.visualization import query_bars
+data = pd.DataFrame({"候选数量": [4]})
+chart_panel("missing_query", lambda _: query_bars(data), data, ChartStyle("Hits", "Count", "Query"))
+""").run()
+    assert not app.exception
+    assert "qseqid / Query Name" in app.warning[0].value

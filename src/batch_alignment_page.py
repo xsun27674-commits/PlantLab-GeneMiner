@@ -6,6 +6,7 @@ from html import escape
 from math import ceil
 from pathlib import Path
 from textwrap import wrap
+from time import monotonic_ns
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -351,7 +352,7 @@ def matrix_panel(project, stored, indices, query, labels):
         if query is None and len(stored["key"]) == 6:
             ordering.append("按相似性聚类")
         order = st.selectbox(tr("序列排序"), ordering, format_func=tr, key="alignment_setting_matrix_order")
-        small = len(indices) <= 12
+        small = len(indices) <= 15
         numbers = small and st.checkbox(tr("在单元格显示数值"), key="alignment_setting_matrix_numbers")
         color_range = (0, 100)
         if metric == "Identity (%)":
@@ -377,7 +378,12 @@ def matrix_panel(project, stored, indices, query, labels):
         preview.info(tr("当前比对结果没有可绘制的数值。局部比对无命中时，一致性为空。"))
         return None
     if not small:
-        st.caption(tr("大矩阵按需显示坐标标签。悬停可查看完整信息，下载表格可取得完整矩阵。"))
+        with st.expander(tr("编号与序列对应关系")):
+            st.dataframe(pd.DataFrame({
+                tr("序列编号"): range(1, len(indices) + 1),
+                tr("显示名称"): xlabels,
+                "Sequence ID": [record_info(project, index)["original"] for index in indices],
+            }), hide_index=True)
     stem = "local_identity_matrix" if metric == "Identity (%)" else "local_score_matrix"
     downloads(matrix, export_metadata(project, stored), stem, "matrix")
     figure = session_result("alignment_figure", (stored["key"], order, metric, numbers, color_range),
@@ -385,26 +391,60 @@ def matrix_panel(project, stored, indices, query, labels):
                             stored, color_range)
     st.session_state.setdefault("report_figures", {})["local_alignment_matrix"] = (metric, figure)
     click_script = """
+    const chart = document.getElementById("chart");
+    const xRange = chart.layout.xaxis.range.slice();
+    const yRange = chart.layout.yaxis.range.slice();
+    const margin = chart.layout.margin;
+    const ratio = chart.data[0].z.length / chart.data[0].x.length;
+    const exportWidth = chart.layout.width;
+    const columns = chart.data[0].x.length;
+    const minimumWidth = columns <= 15 ? Math.max(390, margin.l + margin.r + 26 * columns) : 390;
+    let lastWidth = 0;
+    function layoutMatrix(reset = false) {
+        const available = document.documentElement.clientWidth;
+        const width = Math.max(minimumWidth, Math.min(available, exportWidth, 670));
+        if (!reset && width === lastWidth) return;
+        lastWidth = width;
+        const height = Math.round((width - margin.l - margin.r) * ratio) + margin.t + margin.b;
+        const changes = {width, height, autosize: false};
+        if (reset) {
+            Object.assign(changes, {
+                "xaxis.range": xRange, "xaxis.autorange": false,
+                "yaxis.range": yRange, "yaxis.autorange": false,
+                dragmode: "pan"
+            });
+        }
+        return Plotly.relayout(chart, changes);
+    }
+    document.getElementById("matrix-reset").addEventListener("click", () => layoutMatrix(true));
+    window.addEventListener("message", event => {
+        if (event.source === parent && event.data?.type === "plantlab_reset_matrix") layoutMatrix(true);
+    });
+    new ResizeObserver(() => layoutMatrix()).observe(document.documentElement);
+    layoutMatrix();
     document.getElementById("matrix-loading").hidden = true;
-    document.getElementById("chart").on("plotly_click", event => {
+    chart.on("plotly_click", event => {
         const data = event.points[0]?.customdata;
         if (data && Number.isInteger(data[3])) {
             parent.postMessage({type: "plantlab_pair", row: data[3]}, "*");
         }
     });"""
     html = pio.to_html(figure, full_html=False, include_plotlyjs=True, div_id="chart", post_script=click_script,
-                       config={"displaylogo": False, "modeBarButtonsToRemove": ["toImage"], "scrollZoom": True})
+                       config={"displaylogo": False, "modeBarButtonsToRemove": ["toImage"], "scrollZoom": False})
+    reset_label = escape(tr("恢复默认视图"))
     message = escape(tr("热图未能加载。请刷新后重试。"))
     # Embed the renderer so the nested iframe does not depend on a proxy-relative asset URL.
-    html = ('<p id="matrix-loading" role="status" hidden>' + message + '</p>'
+    html = ('<button id="matrix-reset" type="button">' + reset_label + '</button>'
+            '<p id="matrix-loading" role="status" hidden>' + message + '</p>'
             '<script>for (const event of ["error","unhandledrejection"]) {'
             'window.addEventListener(event, () => {document.getElementById("matrix-loading").hidden = false;});}'
             '</script>' + html)
-    rendered = browser_chart(html, stem, figure.layout).replace("overflow:hidden", "overflow:auto")
+    rendered = browser_chart(html, stem, figure.layout, full_view=True).replace("overflow:hidden", "overflow:auto")
     component_key = sha256(repr(stored["key"]).encode()).hexdigest()
     with preview:
-        return matrix_component(html=rendered, height=min(540, figure.layout.height + 84),
-                                key=f"matrix_{component_key}", default=None)
+        # Notify the iframe even when Streamlit reruns with identical figure data.
+        return matrix_component(html=rendered, height=min(700, figure.layout.height + 105),
+                                render_token=monotonic_ns(), key=f"matrix_{component_key}_{metric}", default=None)
 
 
 def build_matrix_figure(project, values, indices, row_ids, xlabels, ylabels, metric, numbers,
@@ -434,17 +474,24 @@ def build_matrix_figure(project, values, indices, row_ids, xlabels, ylabels, met
         z.update(zmin=low, zmax=high if high > low else low + .001)
     if numbers:
         z.texttemplate = "%{z:.1f}"
-    margin = max(130, min(280, max(map(len, xlabels)) * 5))
-    width = max(800, margin + 140 + min(1850, 23 * len(indices)))
-    height = max(430, 250 + min(1850, 19 * len(row_ids)))
+    large = len(indices) > 15
+    margin = dict(l=52, r=92, b=54, t=46) if large else dict(l=155, r=92, b=135, t=46)
+    side = max(450, min(820, len(indices) * 16))
+    height = round(side * len(row_ids) / len(indices)) + margin["b"] + margin["t"]
     figure = go.Figure(z)
-    figure.update_layout(title_text=metric, width=width, height=height,
-                         margin=dict(l=margin, r=90, b=155, t=65),
-                         font=dict(size=11), xaxis=dict(title="Subject", tickangle=-35),
-                         yaxis=dict(title="Query", autorange="reversed"))
-    for axis, labels in ((figure.update_xaxes, xlabels), (figure.update_yaxes, ylabels)):
-        stride = max(1, ceil(len(labels) / 24))
+    figure.update_layout(
+        title_text=metric, width=side + margin["l"] + margin["r"], height=height,
+        margin=margin, font=dict(size=11), dragmode="pan",
+        xaxis=dict(title="Subject", range=[-.5, len(indices) - .5], constrain="domain"),
+        yaxis=dict(title="Query", range=[len(row_ids) - .5, -.5],
+                   scaleanchor="x", scaleratio=1, constrain="domain"),
+    )
+    subject_number = {index: pos + 1 for pos, index in enumerate(indices)}
+    for axis, labels, ids, angle in ((figure.update_xaxes, xlabels, indices, -60),
+                                    (figure.update_yaxes, ylabels, row_ids, 0)):
+        stride = ceil(len(labels) / 10) if large else 1
         ticks = list(range(0, len(labels), stride))
-        axis(tickmode="array", tickvals=ticks, automargin=True,
-             ticktext=["<br>".join(escape(line) for line in wrap(labels[index], width=30)) for index in ticks])
+        axis(tickmode="array", tickvals=ticks, tickangle=0 if large else angle,
+             ticktext=[str(subject_number[ids[pos]]) if large else
+                       "<br>".join(escape(line) for line in wrap(labels[pos], width=23)) for pos in ticks])
     return figure

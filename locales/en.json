@@ -586,5 +586,10 @@
   "取消": "Cancel",
   "按基因筛选图表": "Filter chart by gene",
   "当前比对结果没有可绘制的数值。局部比对无命中时，一致性为空。": "No values are available to plot. Identity is unavailable for local alignments with no hits.",
-  "热图未能加载。请刷新后重试。": "The heatmap could not load. Refresh and try again."
+  "热图未能加载。请刷新后重试。": "The heatmap could not load. Refresh and try again.",
+  "开始序列比较 →": "Start sequence comparison →",
+  "开始 BLAST 分析 →": "Start BLAST analysis →",
+  "恢复默认视图": "Reset view",
+  "编号与序列对应关系": "Sequence number lookup",
+  "无法绘图，数据缺少所需字段": "Chart data is missing required fields"
 }

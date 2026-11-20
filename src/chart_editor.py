@@ -19,6 +19,7 @@ from src.i18n import tr, translator
 
 from src.export_utils import csv_bytes
 from src.timing import elapsed
+from src.visualization import ChartDataError
 
 PALETTE = tuple(qualitative.Dark24)
 PLOTLY_ASSETS = components.declare_component(
@@ -142,6 +143,8 @@ def apply_style(figure, style):
     ):
         update(title_text=title, showgrid=style.grid, showticklabels=style.ticks,
                ticks="outside" if style.ticks else "", range=axis_range(limits), title_standoff=14)
+    if (figure.layout.meta or {}).get("hide_x_ticks"):
+        fig.update_xaxes(showticklabels=False, ticks="")
     return fig
 
 
@@ -283,7 +286,11 @@ def export_filename(value, fallback):
 
 def chart_panel(key, builder, data, defaults, groupable=False):
     with st.container(border=True, key=f"chart_card_{key}"):
-        _chart_panel(key, builder, data, defaults, groupable)
+        try:
+            _chart_panel(key, builder, data, defaults, groupable)
+        except ChartDataError as exc:
+            st.session_state.get("report_figures", {}).pop(key, None)
+            st.warning(f'{tr("无法绘图，数据缺少所需字段")} · {exc}')
 
 
 def _chart_panel(key, builder, data, defaults, groupable):
@@ -430,13 +437,14 @@ def _chart_panel(key, builder, data, defaults, groupable):
         exports[1].download_button(tr("图表数据 CSV"), csv_bytes(data), f"{filename}.csv", "text/csv", key=f"csv_{key}")
         exports[2].download_button(tr("样式 JSON"), json.dumps(asdict(style), ensure_ascii=False, indent=2),
                                    f"{filename}.json", "application/json", key=f"json_{key}")
-def browser_chart(plot_html, filename, layout):
+def browser_chart(plot_html, filename, layout, *, full_view=False):
     buttons = "".join(
         f'<button type="button" data-format="{kind}">{escape(tr(f"下载 {kind.upper()}"))}</button>'
         for kind in ("png", "svg")
     )
     options = json.dumps({"filename": filename, "width": layout.width, "height": layout.height})
-    export_layout = json.dumps({key: layout[key].to_plotly_json() for key in ("margin", "legend")}).replace("<", "\\u003c")
+    fixed = ("margin", "legend", "xaxis", "yaxis") if full_view else ("margin", "legend")
+    export_layout = json.dumps({key: layout[key].to_plotly_json() for key in fixed}).replace("<", "\\u003c")
     failure = json.dumps(tr("图片下载失败，请重试。"), ensure_ascii=True)
     return f"""
 <style>

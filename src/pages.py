@@ -110,10 +110,10 @@ def home():
     else:
         st.caption(tr("当前项目尚未导入序列。"))
     cards = (
-        ("local", "序列比较与相似性筛选", "比较已上传 DNA 序列的相同与差异，分析序列一致性，并筛选相似序列。",
-         "开始本地分析", "FASTA 序列分析"),
         ("blast", "BLAST 搜索与候选筛选", "选择参考序列和目标序列集合，通过 BLAST 搜索相似序列并筛选候选结果。",
-         "开始 BLAST 分析", "BLAST 搜索"),
+         "开始 BLAST 分析 →", "BLAST 搜索"),
+        ("local", "序列比较与相似性筛选", "比较已上传 DNA 序列的相同与差异，分析序列一致性，并筛选相似序列。",
+         "开始序列比较 →", "FASTA 序列分析"),
     )
     for column, (path, title, description, action, destination) in zip(st.columns(2), cards):
         with column.container(key=f"home_path_{path}", border=True):
@@ -667,19 +667,23 @@ def plot_distribution(frame, key, field, title, id_field):
             frame = frame.loc[frame[gene_column].isin(chosen)]
     histogram = mode == "直方图" or (mode == "自动" and len(frame) > 50)
     horizontal = mode == "柱状图" or (mode == "自动" and not histogram)
-    if id_field == "sseqid" and "Subject Name" in frame:
-        id_field = "Subject Name"
+    if id_field == "sseqid":
+        if "Subject Name" in frame:
+            id_field = "Subject Name"
+        elif id_field not in frame:
+            id_field = charts.query_field(frame) or id_field
     hover_fields = ("序列 ID", "Original Sequence ID", "Gene", "Accession", "Internal ID",
                     "序列类型", "序列长度", "Query Name", "Subject Name", "Query Sequence ID", "Query Gene", "Query Accession",
                     "Subject Sequence ID", "Subject Original Sequence ID", "Subject Gene", "Subject Accession",
                     "qseqid", "sseqid", "bitscore", "evalue")
     hover = [name for name in hover_fields if name in frame and name != field]
+    sequence_scatter = mode == "散点图" and key in ("fasta_length", "fasta_gc")
     chart_panel(
         key, lambda grouped: charts.distribution(frame, field, title, id_field, "直方图" if histogram else "柱状图" if horizontal else mode,
-                                                   grouped, hover, horizontal=horizontal),
-        frame, ChartStyle(title, title if histogram or horizontal else id_field,
+                                                   grouped, hover, horizontal=horizontal, sequence_scatter=sequence_scatter),
+        frame, ChartStyle(title, title if histogram or horizontal else "序列编号" if sequence_scatter else id_field,
                           "记录数" if histogram else id_field if horizontal else title),
-        groupable="qseqid" in frame,
+        groupable=charts.query_field(frame) is not None,
     )
 
 

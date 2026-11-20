@@ -15,6 +15,8 @@ window.addEventListener("message", event => {
     if (content !== html) {
       content = html;
       frame.srcdoc = html;
+    } else {
+      frame.contentWindow.postMessage({type: "plantlab_reset_matrix"}, "*");
     }
     frame.style.height = height + "px";
     send("streamlit:setFrameHeight", {height});
