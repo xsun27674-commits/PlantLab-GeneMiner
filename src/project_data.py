@@ -48,6 +48,9 @@ def table_metadata(frame, *, include_source=False):
                 ("originalsequenceid",))]
     if include_source:
         columns += [names.get("geneid"), names.get("species")]
+        category = names.get("ncbiselectcategory")
+        if category is not None and frame[category].fillna("").ne("").any():
+            columns.append(category)
     return [tuple(str(row[column]).strip() if column is not None else "" for column in columns)
             for _, row in frame.fillna("").iterrows()]
 
@@ -66,15 +69,19 @@ def register_sequences(fingerprint, name, origin, sequence_type, data, metadata=
         for index, record in enumerate(SeqIO.parse(StringIO(data.decode("utf-8-sig").lstrip()), "fasta")):
             records.append((record.id, str(record.seq)))
             gene_id, symbol, species, accession = match_record(record, ({}, {}, {}))
+            select_category = ""
             if index < len(metadata):
                 supplied_symbol, supplied_accession, transcript, original, *source = map(clean_metadata, metadata[index])
                 if source:
                     gene_id, species = source[0] or gene_id, source[1] or species
+                    if origin == "NCBI Datasets" and len(source) > 2:
+                        select_category = source[2]
             else:
                 supplied_symbol = supplied_accession = transcript = original = ""
             identities.append({"gene": supplied_symbol or clean_metadata(symbol),
                                "accession": supplied_accession or accession, "transcript": transcript,
                                "original": original or record.id, "gene_id": gene_id, "species": species,
+                               "select_category": select_category,
                                "id": f"seq-{fingerprint[1][:12]}-{index + 1}"})
         return records, identities
 
@@ -94,7 +101,8 @@ def invalidate_sequence_results():
         for chart in list(figures):
             if chart.startswith("blast_"):
                 figures.pop(chart)
-    for key in ("local_blast_run", "local_blast_queries", "local_blast_targets", "local_blast_source_mode"):
+    for key in ("local_blast_run", "local_blast_queries", "local_blast_targets", "local_blast_source_mode",
+                "local_blast_exclude_isoforms", "local_blast_transcript_scope", "alignment_setting_transcript_scope"):
         st.session_state.pop(key, None)
     for key in ("fasta_length", "fasta_gc", "local_alignment_matrix", "local_candidate_comparison", "local_candidate_identity"):
         st.session_state.get("report_figures", {}).pop(key, None)
@@ -117,7 +125,7 @@ def record_info(project, index):
     info = metadata[index] if index < len(metadata) else {}
     return {"original": info.get("original", record), "gene": info.get("gene", ""), "accession": info.get("accession", ""),
             "transcript": info.get("transcript", ""), "gene_id": info.get("gene_id", ""),
-            "species": info.get("species", ""),
+            "species": info.get("species", ""), "select_category": info.get("select_category", ""),
             "id": info.get("id", f"seq-{project['key'][1][:12]}-{index + 1}")}
 
 

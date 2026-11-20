@@ -103,3 +103,15 @@ def test_joins_only_exact_transcript_version_from_report():
     assert frame["Gene"].tolist() == ["Verified", UNKNOWN]
     assert frame["Species"].tolist() == ["Arabidopsis thaliana", UNKNOWN]
     assert frame["_gene_id"].tolist() == ["123", ""]
+
+
+def test_select_annotation_is_linked_by_gene_and_exact_accession():
+    fasta, reports, _ = source_rows((2,))
+    matching = {**reports[0], "transcripts": [
+        {"accessionVersion": "XM_000101.1", "selectCategory": "REFSEQ_SELECT"},
+        {"accessionVersion": "XM_000102.2", "selectCategory": "MANE_SELECT"},
+    ]}
+    result = parse_ncbi_zip(package(fasta, reports, [
+        ("ncbi_dataset/data/product_report.jsonl", json.dumps(matching)),
+    ]))
+    assert result["_select_category"].tolist() == ["REFSEQ_SELECT", ""]

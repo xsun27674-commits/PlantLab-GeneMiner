@@ -19,6 +19,7 @@ from src.chart_editor import browser_chart
 from src.export_utils import csv_bytes, excel_bytes
 from src.i18n import tr
 from src.project_data import current_candidates, record_info, record_labels, project_status
+from src.transcripts import analysis_transcripts
 from src.timing import session_result
 
 
@@ -97,10 +98,11 @@ def batch_page(project):
 
     select = st.radio(tr("记录范围"), ["全部序列", "指定序列"], horizontal=True,
                       key="alignment_setting_batch_range", format_func=tr)
-    indices = list(range(len(records)))
+    indices = analysis_transcripts(project, list(range(len(records))), "alignment_setting_transcript_scope")
     if select == "指定序列":
-        indices = st.multiselect(tr("选定记录"), indices, format_func=labels.__getitem__,
-                                 key="alignment_setting_batch_indices")
+        chosen = st.multiselect(tr("选定记录"), indices, format_func=labels.__getitem__,
+                                key="alignment_setting_batch_indices")
+        indices = [index for index in chosen if index in indices]
     method = st.radio(tr("比较方式"), ["两两比较", "单查询对其余序列", "按基因分组"], horizontal=True, format_func=tr,
                       key="alignment_setting_batch_method")
     st.caption(tr({"两两比较": "比较选定范围中的每个唯一序列对。",
@@ -372,6 +374,8 @@ def matrix_panel(project, stored, indices, query, labels):
     row_label = next(name for name in ("Query", *(f"Query [{i}]" for i in range(len(xlabels) + 1)))
                      if name not in xlabels)
     matrix = pd.DataFrame(values, index=ylabels, columns=xlabels).reset_index(names=row_label)
+    if metric == "Identity (%)":
+        st.caption(tr("空白表示未比较或没有有效比对。0% 表示有效比对的一致性为零。"))
     if query is None and not stored["key"][5]:
         st.caption(tr("默认不计算自比对，矩阵对角线留空。"))
     if not any(value is not None for row in values for value in row):

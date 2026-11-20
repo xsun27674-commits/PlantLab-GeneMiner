@@ -30,6 +30,7 @@ from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
 from src.project_data import classify_table, clear_sequence_project, current_candidates, invalidate_sequence_results, project_status, record_info, record_labels, project_gene_count, register_sequences, sequence_columns, table_metadata
+from src.transcripts import EVIDENCE_FIELDS, EXCLUDE_ISOFORMS, analysis_transcripts, isoform_hit_mask
 from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -372,7 +373,10 @@ EXTERNAL_BLAST = "外部 BLAST 命中表"
 def project_blast(project, records):
     st.info(tr("当前运行的是项目内本地 BLAST，仅搜索用户上传的序列，不代表搜索整个 NCBI 数据库。"))
     labels = record_labels(project)
-    available = list(records)
+    available = analysis_transcripts(project, list(records), "local_blast_transcript_scope")
+    if not available:
+        st.info(tr("当前范围内没有可用于分析的序列。"))
+        return None
     try:
         executable_paths()
         unavailable = None
@@ -389,7 +393,9 @@ def project_blast(project, records):
         targets = cols[1].multiselect(tr("目标序列（默认全部）"), available, format_func=labels.__getitem__,
                                       key="local_blast_targets")
         run = st.form_submit_button(tr("使用当前序列运行 BLAST"), type="primary", disabled=unavailable is not None)
-    queries, targets = tuple(queries or available), tuple(targets or available)
+    allowed = set(available)
+    queries, targets = (tuple(index for index in chosen if index in allowed) or tuple(available)
+                        for chosen in (queries, targets))
     previous = st.session_state.get("local_blast_run")
     if previous and previous["key"][0] != project["key"]:
         previous = None
@@ -411,6 +417,8 @@ def project_blast(project, records):
                     st.session_state["report_figures"].pop(key)
     if previous is None:
         return None
+    if not run and previous["key"] != (project["key"], queries, targets):
+        st.caption(tr("以下显示上次成功的搜索结果。"))
 
     hits = previous["hits"]
     st.success(f'{tr("本地 BLAST 已完成")} · {previous["version"]} · {len(hits)} {tr("条命中")}')
@@ -472,6 +480,11 @@ def external_blast(selected):
                     mapping[field] = selected_col
         try:
             hits = session_result("blast_mapping", (file_key, delimiter, header, mapping), normalize_hits, raw, mapping)
+            extra = [f"{side} {field}" for side in ("Query", "Subject")
+                     for field in (*EVIDENCE_FIELDS.values(), "Name", "Sequence ID", "Internal ID")
+                     if f"{side} {field}" in raw and f"{side} {field}" not in hits]
+            if extra:
+                hits = pd.concat([hits, raw[extra]], axis=1)
         except ValueError as exc:
             st.error(tr(str(exc)))
             return None
@@ -555,6 +568,8 @@ def blast():
             return
         name, origin, file_key, delimiter, header, mapping, hits = imported
 
+    exclude_isoforms = st.checkbox(tr(EXCLUDE_ISOFORMS), key="local_blast_exclude_isoforms",
+                                   help=tr("适用于不同基因之间的相似性分析。启用后，排除同一基因不同转录本之间的命中；研究可变剪接或转录本差异时建议关闭。"))
     st.subheader(tr("筛选阈值"))
     st.caption(tr("一致性 pident 表示比对区段中相同位置的百分比；比特得分 bitscore 越高通常表示比对得分越高。"))
     presets = {"自定义筛选": None, "宽松筛选": (30.0, "1e-3", 30, 30.0),
@@ -597,12 +612,20 @@ def blast():
         st.caption(f'{tr("已隐藏的相同序列命中")} · {len(hits) - len(eligible)}')
     elif exclude_identical and eligible.empty and not hits.empty:
         st.info(tr("当前只有自命中或完全相同序列的命中，可开启显示。"))
+    removed_isoforms = 0
+    if exclude_isoforms:
+        matches = session_result("blast_isoforms", (file_key, delimiter, header, mapping), isoform_hit_mask,
+                                 hits, project if local else None)
+        excluded = matches.loc[eligible.index]
+        removed_isoforms = int(excluded.sum())
+        eligible = eligible.loc[~excluded]
+        st.caption(f'{tr("已排除的同基因不同转录本 HSP")} · {removed_isoforms}')
     try:
-        filtered = session_result("blast_filter", (file_key, delimiter, header, mapping, thresholds, exclude_identical), filter_hits, eligible, thresholds)
+        filtered = session_result("blast_filter", (file_key, delimiter, header, mapping, thresholds, exclude_identical, exclude_isoforms), filter_hits, eligible, thresholds)
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
-    fingerprint = (name, origin, file_key, delimiter, header, mapping, thresholds, exclude_identical)
+    fingerprint = (name, origin, file_key, delimiter, header, mapping, thresholds, exclude_identical, exclude_isoforms)
     queries = pd.Series(local["queries"]) if local else hits["qseqid"]
     best, counts = session_result("blast_count", fingerprint,
                                   lambda: (best_hits(filtered), candidate_counts(filtered, queries)))
@@ -618,7 +641,7 @@ def blast():
         "key": fingerprint, "timestamp": timestamp, "name": name, "origin": origin,
         "thresholds": thresholds, "mapping": mapping, "before": len(hits), "filtered": filtered,
         "best": best, "counts": counts, "coverage_fields": fields, "delimiter": delimiter,
-        "header": header,
+        "header": header, "exclude_isoforms": exclude_isoforms, "removed_isoform_hsps": removed_isoforms,
     }
     if local:
         st.session_state["blast_result"]["local_search"] = {
@@ -649,7 +672,7 @@ def blast():
     result_tab.dataframe(readable_results(compared), width="stretch", hide_index=True)
     best_tab.caption(tr("同一 Query 按 Bit score 降序、E-value 升序、Identity 降序、比对长度降序、Subject ID 升序、原始行序排序，取首条。"))
     best_tab.dataframe(readable_results(best), width="stretch", hide_index=True)
-    count_tab.caption(tr("对每个 Query 统计筛选后唯一的 Subject ID，保留候选数为 0 的 Query。"))
+    count_tab.caption(tr("每行命中是一个 HSP。候选数按每个 Query 的唯一 Subject ID 统计，同一序列对的多条 HSP 只计一次。"))
     count_tab.dataframe(readable_results(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)

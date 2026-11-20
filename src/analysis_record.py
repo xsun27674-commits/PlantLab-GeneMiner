@@ -27,6 +27,9 @@ def build_record(metadata, fasta_result=None, blast_result=None, pairwise_record
             })
         record["字段映射"] = blast_result["mapping"]
         record["筛选阈值"] = asdict(blast_result["thresholds"])
+        if "exclude_isoforms" in blast_result:
+            record["筛选阈值"]["排除同一基因的不同转录本命中"] = blast_result["exclude_isoforms"]
+            record["BLAST"]["已排除的同基因不同转录本 HSP"] = blast_result["removed_isoform_hsps"]
     if pairwise_record:
         record["成对序列比对"] = dict(pairwise_record)
     return record

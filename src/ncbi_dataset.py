@@ -21,7 +21,8 @@ MAX_MEMBERS = 512
 MAX_RECORDS = 5000
 UNKNOWN = "待核实"
 COLUMNS = ["Sequence ID", "Gene", "Species", "Accession", "Length (bp)", "Sequence"]
-INTERNAL = ["_gene_id", "_transcript", "_original_sequence_id"]
+INTERNAL = ["_gene_id", "_transcript", "_original_sequence_id", "_select_category"]
+SELECT_PRIORITY = {"REFSEQ_SELECT": 1, "MANE_SELECT": 2}
 REFSEQ_RNA = r"(?:NM|NR|XM|XR)_[0-9]+(?:\.[0-9]+)?"
 REFSEQ_PROTEIN = r"(?:NP|XP|YP|WP|AP|ZP)_[0-9]+(?:\.[0-9]+)?"
 TAG = re.compile(r"\[([^=\]]+)=([^\]]*)\]")
@@ -56,7 +57,7 @@ def field(record, *keys):
     return next((value for key in keys if (value := metadata_text(record.get(key)))), "")
 
 
-def read_index(archive, report):
+def read_index(archive, report, selections=None):
     genes, by_rna, by_protein = defaultdict(set), defaultdict(set), defaultdict(set)
     if report is None:
         return genes, by_rna, by_protein
@@ -87,6 +88,12 @@ def read_index(archive, report):
                 accession = field(transcript, "accessionVersion", "accession_version")
                 if not accession:
                     continue
+                if selections is not None and profile[0]:
+                    category = field(transcript, "selectCategory", "select_category")
+                    if category in SELECT_PRIORITY:
+                        key = profile[0], accession
+                        selections[key] = max((selections.get(key, ""), category),
+                                              key=lambda value: SELECT_PRIORITY.get(value, 0))
                 evidence = (*profile, accession)
                 by_rna[accession].add(evidence)
                 protein = transcript.get("protein")
@@ -159,7 +166,9 @@ def parse_ncbi_zip(data):
             if sum(item.file_size for item in cds_members) > MAX_CDS:
                 raise ValueError("包内 CDS FASTA 解压后超过 8 MB。")
             report = members.get("ncbi_dataset/data/data_report.jsonl")
-            index = read_index(archive, report)
+            selections = {}
+            index = read_index(archive, report, selections)
+            read_index(archive, members.get("ncbi_dataset/data/product_report.jsonl"), selections)
             rows = []
             for member in cds_members:
                 fasta = archive.read(member).decode("utf-8-sig")
@@ -167,7 +176,8 @@ def parse_ncbi_zip(data):
                     gene, name, species, transcript = match_record(record, index)
                     sequence = str(record.seq)
                     rows.append((record.id, name or UNKNOWN, species or UNKNOWN, transcript or UNKNOWN,
-                                 len(sequence), sequence, gene, transcript, record.id))
+                                 len(sequence), sequence, gene, transcript, record.id,
+                                 selections.get((gene, transcript), "")))
                     if len(rows) > MAX_RECORDS:
                         raise ValueError("NCBI ZIP 最多支持 5,000 条 CDS。")
     except (BadZipFile, OSError, EOFError, RuntimeError, NotImplementedError, UnicodeError, CompressionError) as exc:

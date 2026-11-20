@@ -111,7 +111,8 @@ def run_local_blast(project, records, queries, targets):
         indices.extend(by_token[identifier.removeprefix("lcl|")] for identifier in hits[column])
         information = [record_info(project, index) for index in indices]
         hits[f"{side} Name"] = [labels[index] for index in indices]
-        for key, label in (("original", "Sequence ID"), ("gene", "Gene"), ("accession", "Accession"), ("id", "Internal ID")):
+        for key, label in (("original", "Sequence ID"), ("gene", "Gene"), ("accession", "Accession"), ("id", "Internal ID"),
+                           ("gene_id", "Gene ID"), ("species", "Species"), ("transcript", "Transcript")):
             hits[f"{side} {label}"] = [item[key] for item in information]
     groups = {}
     sequence_class = {index: groups.setdefault(records[index], len(groups)) for index in token}

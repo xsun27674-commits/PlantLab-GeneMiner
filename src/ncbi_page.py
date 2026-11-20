@@ -22,7 +22,12 @@ def ncbi_link():
 
 def ncbi_source(name, data):
     digest = sha256(data).hexdigest()
-    original = session_result("ncbi_zip", digest, parse_ncbi_zip, data)
+    original = session_result("ncbi_zip", (digest, 2), parse_ncbi_zip, data)
+    select_annotations = {
+        (gene, transcript): category
+        for gene, transcript, category in original[["_gene_id", "_transcript", "_select_category"]].itertuples(index=False, name=None)
+        if category
+    }
     saved = st.session_state.get("sequence_ncbi_table")
     if saved and saved[0] == digest:
         original = saved[1].copy()
@@ -50,6 +55,11 @@ def ncbi_source(name, data):
         originals = draft[2].copy()
         if "_original_sequence_id" not in originals:
             originals["_original_sequence_id"] = originals["Sequence ID"]
+    if "_select_category" not in originals:
+        originals = originals.assign(_select_category=[
+            select_annotations.get((gene, transcript), "")
+            for gene, transcript in originals[["_gene_id", "_transcript"]].itertuples(index=False, name=None)
+        ])
     revision = st.session_state.get("sequence_ncbi_revision", 0)
     editor_id = sha256(repr((digest, mode, selection, revision)).encode()).hexdigest()
     st.caption(tr("可批量编辑序列编号和序列，或删除行。基因、物种与转录本编号取自原始记录。"))
@@ -119,11 +129,13 @@ def ncbi_source(name, data):
     clicked = analyze.button(tr("应用序列到项目"), type="primary", disabled=public.empty)
     applied = st.session_state.get("sequence_ncbi_applied")
     if clicked:
-        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"]), include_source=True)
+        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"],
+                                                NCBISelectCategory=edited["_select_category"]), include_source=True)
         canonical = table_to_fasta(public, "Sequence ID", "Sequence")
         st.session_state["sequence_ncbi_applied"] = (digest, export_signature, canonical)
         return name, canonical, "NCBI Datasets"
     if applied and applied[:2] == (digest, export_signature):
-        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"]), include_source=True)
+        st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"],
+                                                NCBISelectCategory=edited["_select_category"]), include_source=True)
         return name, applied[2], "NCBI Datasets"
     return None
