@@ -9,7 +9,7 @@ app_port: 7860
 
 # PlantLab-GeneMiner
 
-面向植物功能基因挖掘的候选基因筛选与分析平台。V1.1 支持 FASTA 序列检查、BLAST 表格导入、交互式筛选、Plotly 图表及科研记录导出。
+面向植物功能基因挖掘的候选基因筛选与分析平台，当前版本为 **v3.0 Beta**。支持 FASTA 与 NCBI Datasets CDS ZIP 导入、成对序列比对、项目内 BLAST+、候选筛选、交互图表及 CSV、Excel、PNG 和 SVG 导出。
 
 ## 本地运行
 
@@ -34,6 +34,31 @@ Windows PowerShell 可用 `.venv\Scripts\Activate.ps1` 激活环境。打开终�
 6. 填写分析记录并下载 JSON、筛选结果 CSV 或包含筛选结果、最佳命中和分析参数的 Excel。分析时间标注为 UTC。
 
 示例 FASTA 含 6 条人工序列。示例 BLAST 含 60 条模拟命中，覆盖 6 个 Query 和 10 个 Subject。模拟命中由程序生成。
+
+## Streamlit Community Cloud
+
+**公开网址**：部署完成并验证后，在此填写 Community Cloud 分配的地址。
+
+**备用入口**：[V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。
+
+1. 在 [Streamlit Community Cloud](https://share.streamlit.io/) 登录并连接拥有该仓库访问权限的 GitHub 账户。
+2. 选择 **Create app / Deploy a public app from GitHub**，填写下列值。
+
+   | 字段 | 值 |
+   | --- | --- |
+   | Repository | `xsun27674-commits/PlantLab-GeneMiner` |
+   | Branch | `community-cloud` |
+   | Main file path | `app.py` |
+   | Advanced settings → Python version | `3.11` |
+
+3. 公开游客版的 **Secrets** 留空，使用平台分配的网址或为此应用选择可用的子域名，再点击 **Deploy**。
+4. 应用就绪后，用无痕窗口打开地址，确认游客可直接进入首页。用模拟数据验证上传、成对比对、BLAST 搜索及下载，然后公布实际网址。
+
+仓库根目录的 `packages.txt` 让 Community Cloud 通过 APT 安装 `ncbi-blast+` 和 `util-linux`。前者提供 `blastn` 与 `makeblastdb`，后者提供 Linux 资源限制工具 `prlimit`。`requirements.txt` 沿用固定的 Python 依赖版本，`.streamlit/config.toml` 保留 10 MiB 上传上限。图表卡片的 PNG/SVG 由浏览器渲染，公开部署无需安装服务端 Chromium。Docker 和 Binder 继续使用各自的依赖清单及启动配置。
+
+可上传 FASTA、NCBI Datasets CDS ZIP、UTF-8 CSV 或 XLSX 序列表。外部 BLAST 支持标准 outfmt 6 以及带表头的 CSV、TSV、XLSX。内置 BLAST+ 只搜索用户为当前任务选中的目标序列，搜索范围不含完整 NCBI 数据库。
+
+公开游客版按浏览器会话管理上传文件与分析结果。每次 BLAST 搜索使用独立的临时目录，正常完成、失败或超时退出时清理。公开环境请使用适合公开服务处理的数据。游客会话结束后，建议依赖已下载文件留存结果。服务可能休眠，首次部署和唤醒可能需要等待。平台 CPU、内存和运行时配额仍适用。应用已有上传和分析任务上限、批量比对进度及取消入口，较大任务可选择较小的查询或目标集合。工作进程级别的限制不等同于站点配额或访客限流。
 
 ## Hugging Face Spaces 部署
 
@@ -128,3 +153,7 @@ Biopython PairwiseAligner 使用全局或局部模式。一致性以包含缺口
 Binder 通过 `binder/apt.txt` 安装 `ncbi-blast+` 和 `util-linux`，Dockerfile 同样安装这两项。本地 Debian/Ubuntu 可运行 `sudo apt-get install ncbi-blast+ util-linux`。启动前可用 `blastn -version` 和 `makeblastdb -version` 检查 PATH。
 
 本地搜索每次使用一个线程，每次最多 128 条查询和 128 条目标序列，每侧总长最多 500,000 bp，单条最长 50,000 bp。建库超时 15 秒，搜索超时 45 秒。Linux 上可用 `prlimit` 时限制进程虚拟内存为 768 MiB。搜索固定 E-value 上限为 10，每对最多保留 5 个 HSP。临时目录在任务完成或失败后清理。
+
+### AI 辅助开发说明
+
+本项目使用 AI 工具辅助编写、审查代码与测试。分析数值由项目的 Biopython、NCBI BLAST+ 和数据处理代码计算，研究结论应结合独立证据核实。
