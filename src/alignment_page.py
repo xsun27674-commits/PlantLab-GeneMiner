@@ -7,6 +7,7 @@ from src.i18n import tr, translator
 from Bio import SeqIO
 
 from src.alignment import align_sequences
+from src.account_page import navigate
 from src.batch_alignment_page import batch_page
 from src.project_data import project_status
 from src.export_utils import json_bytes
@@ -26,6 +27,11 @@ def alignment_page():
             st.info(tr("本地 PairwiseAligner 得分不等于 BLAST bitscore，也不产生 E-value。"))
             batch_page(project)
             return
+    if not project or project["type"] != "nucleotide":
+        st.info(tr("项目批量比对需要核酸序列，可先导入项目数据。"))
+        if st.button(tr("前往数据导入 →")):
+            st.session_state["workflow_path"] = "local"
+            navigate("数据导入与管理")
     st.session_state.pop("pairwise_record", None)
     st.info(tr("使用 Biopython 对两条序列进行全局或局部比对。数据库同源搜索需要独立的 BLAST 工作流。"))
     types = {"nucleotide": "DNA / 核酸", "protein": "蛋白质"}

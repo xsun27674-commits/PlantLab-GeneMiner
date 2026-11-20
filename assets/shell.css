@@ -74,8 +74,12 @@
 .plantlab-hero h2 { color: #255b42; margin: 0 0 .6rem; font-size: clamp(1.05rem, 2vw, 1.45rem); }
 .plantlab-hero p { color: #466559; margin: 0 0 1.25rem; }
 .plantlab-hero-art { display: block; width: min(100%, 345px); height: auto; margin: auto; }
-.st-key-home_start button { background: #176b4d; border-color: #176b4d; padding: .52rem 1rem; }
-.st-key-home_start button:hover { background: #12563e; border-color: #12563e; }
+.st-key-home_path_local, .st-key-home_path_blast {
+    background: #f7fbf8;
+    border-color: #ddece2;
+}
+.st-key-home_local button, .st-key-home_blast button { background: #176b4d; border-color: #176b4d; padding: .52rem 1rem; }
+.st-key-home_local button:hover, .st-key-home_blast button:hover { background: #12563e; border-color: #12563e; }
 @media (max-width: 650px) {
     .plantlab-hero-art { width: min(62%, 210px); }
 }

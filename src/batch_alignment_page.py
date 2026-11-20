@@ -31,7 +31,7 @@ def go_to(page):
 
 def flow_actions(next_page=None):
     left, right = st.columns(2)
-    if left.button(tr("← 返回 FASTA 序列分析")):
+    if left.button(tr("← 返回 FASTA 序列统计")):
         go_to("FASTA 序列分析")
     if next_page and right.button(tr("下一步：本地比对候选筛选 →"), type="primary"):
         go_to(next_page)
@@ -332,9 +332,9 @@ def local_candidates_page():
                              "Reference Internal ID": reference, "Exclude self": exclude, "Sort": order},
                   "local_candidates", "candidates")
         render_pair_picker(project, stored, list(selected.index), "candidate", show_sequences=True)
-        if st.button(tr("下一步：结果可视化 →"), type="primary"):
+        if st.button(tr("下一步：分析结果 →"), type="primary"):
             st.session_state["result_view"] = "local"
-            go_to("结果可视化")
+            go_to("分析结果")
     if st.button(tr("← 返回成对序列比对")):
         go_to("成对序列比对")
 

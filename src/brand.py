@@ -74,7 +74,7 @@ def help_center():
     from src.pages import DATA, EXAMPLES
     st.subheader(tr("模拟教学数据"))
     st.caption(tr("模拟教学数据，不代表真实科研结果。"))
-    tips = ("用于 FASTA 序列分析。打开 FASTA 页上传 .fasta 文件。",
+    tips = ("用于 FASTA 序列统计。在「数据导入与管理」上传 .fasta 文件。",
             "用于导入与筛选示例。打开 BLAST 候选筛选页上传 .tsv 文件。")
     for column, (name, label), tip in zip(st.columns(2), EXAMPLES.values(), tips):
         column.download_button(f"{tr('下载')} {tr(label)}", (DATA / name).read_bytes(), name, "text/plain")

@@ -25,11 +25,11 @@ from src.blast_utils import (
 )
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.batch_alignment_page import export_metadata
-from src.local_blast import FIELDS as LOCAL_BLAST_FIELDS, SEARCH_EVALUE, run_local_blast, valid_records
+from src.local_blast import FIELDS as LOCAL_BLAST_FIELDS, SEARCH_EVALUE, executable_paths, run_local_blast, valid_records
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
-from src.project_data import classify_table, clear_sequence_project, current_candidates, invalidate_sequence_results, project_status, record_info, record_labels, register_sequences, sequence_columns, table_metadata
+from src.project_data import classify_table, clear_sequence_project, current_candidates, invalidate_sequence_results, project_status, record_info, record_labels, project_gene_count, register_sequences, sequence_columns, table_metadata
 from src.timing import elapsed, session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
@@ -99,10 +99,31 @@ def home():
                 <h2>{escape(tr("植物序列分析与候选基因筛选平台"))}</h2>
                 <p>{TAGLINE}</p>
             </div>""")
-            if st.button(tr("开始使用 →"), key="home_start", type="primary"):
-                navigate("FASTA 序列分析")
         with illustration:
             st.html(f'<img class="plantlab-hero-art" src="{brand_mark_uri()}" alt="">')
+
+    project = st.session_state.get("project_sequences")
+    if project:
+        name = st.session_state.get("project_name") or project["name"]
+        st.caption(f'{tr("当前项目")} · {name} · {tr("基因数")} {project_gene_count(project)} · '
+                   f'{tr("序列数")} {len(project["records"])}')
+    else:
+        st.caption(tr("当前项目尚未导入序列。"))
+    cards = (
+        ("local", "序列比较与相似性筛选", "比较已上传 DNA 序列的相同与差异，分析序列一致性，并筛选相似序列。",
+         "开始序列比较 →", "FASTA 序列分析"),
+        ("blast", "BLAST 搜索与候选筛选", "选择参考序列和目标序列集合，通过 BLAST 搜索相似序列并筛选候选结果。",
+         "开始 BLAST 分析 →", "BLAST 搜索"),
+    )
+    for column, (path, title, description, action, destination) in zip(st.columns(2), cards):
+        with column.container(key=f"home_path_{path}", border=True):
+            st.subheader(tr(title))
+            st.write(tr(description))
+            if st.button(tr(action), key=f"home_{path}", type="primary"):
+                st.session_state["workflow_path"] = path
+                st.session_state["result_view"] = path
+                ready = project if path == "local" else project_nucleotide_records(project)
+                navigate(destination if ready else "数据导入与管理")
 
 
 def run_time():
@@ -192,20 +213,19 @@ def next_step(label, destination, *, status=None, summary=None, result_view=None
             if st.button(tr(label), key=f"workflow_next_{destination}", type="primary"):
                 if result_view:
                     st.session_state["result_view"] = result_view
+                if destination == "结果可视化":
+                    st.session_state["result_section"] = "结果可视化"
                 if destination == "成对序列比对":
                     st.session_state["alignment_setting_view"] = "当前项目"
                 navigate(destination)
 
 
-def fasta():
-    st.title(tr("FASTA 序列分析"))
+def sequence_data_page():
+    st.title(tr("数据导入与管理"))
     project_status()
     if st.session_state.get("project_sequences"):
         st.button(tr("清空当前序列数据"), on_click=clear_sequence_project)
     previous = st.session_state.get("fasta_result")
-    figures = st.session_state.setdefault("report_figures", {})
-    for chart in ("fasta_length", "fasta_gc"):
-        figures.pop(chart, None)
     try:
         selected = sequence_source()
     except ValueError as exc:
@@ -220,14 +240,20 @@ def fasta():
     )
     if pending_ncbi and selected is None:
         return
-    if selected and (selected[2] == "NCBI Datasets" or st.session_state.get("_sequence_table_is_cds")):
+    if selected is None:
+        if st.session_state.get("project_sequences"):
+            data_next_step()
+        else:
+            st.info(tr("请载入 FASTA 文件并明确选择序列类型。"))
+        return
+    if selected[2] == "NCBI Datasets" or st.session_state.get("_sequence_table_is_cds"):
         sequence_type = "nucleotide"
         st.caption(tr("已识别为核酸序列数据。"))
     else:
         sequence_type = st.radio(tr("序列类型"), labels, index=None,
                                  format_func=lambda key, translate=translator(): translate(labels[key]),
                                  horizontal=True, key="sequence_type", on_change=invalidate_sequence_results)
-    if selected is None or sequence_type is None:
+    if sequence_type is None:
         st.info(tr("请载入 FASTA 文件并明确选择序列类型。"))
         return
     name, data, origin = selected
@@ -249,6 +275,38 @@ def fasta():
         "重复 ID 记录数": int(frame["重复 ID"].sum()),
         "非法字符记录数": int(frame["非法字符"].ne("").sum()),
     }
+    st.success(f'{tr("序列已保存到当前项目")} · {len(frame)} {tr("条序列")}')
+    data_next_step()
+
+
+def data_next_step():
+    if st.session_state.get("workflow_path") == "blast":
+        if project_nucleotide_records(st.session_state.get("project_sequences")):
+            next_step("下一步：BLAST 搜索 →", "BLAST 搜索")
+        else:
+            st.info(tr("BLAST 搜索需要当前项目中的有效核酸序列。"))
+    else:
+        next_step("下一步：FASTA 序列统计 →", "FASTA 序列分析")
+
+
+def fasta():
+    st.title(tr("FASTA 序列统计"))
+    project_status()
+    result = st.session_state.get("fasta_result")
+    project = st.session_state.get("project_sequences")
+    if not project:
+        st.info(tr("请先导入序列，再查看 FASTA 统计。"))
+        next_step("前往数据导入 →", "数据导入与管理")
+        return
+    name, origin, sequence_type = (project[key] for key in ("name", "origin", "type"))
+    labels = {"nucleotide": "核酸", "protein": "蛋白质"}
+    if result and result["key"] == project["key"] and "统计数据" in result:
+        frame = result["统计数据"]
+    else:
+        canonical = "".join(f">{identifier}\n{sequence}\n" for identifier, sequence in project["records"])
+        frame = session_result("fasta_parse", project["key"], analyze_fasta, canonical.encode(), sequence_type)
+    if st.button(tr("← 返回数据导入与管理")):
+        navigate("数据导入与管理")
     if origin == "模拟教学数据":
         st.caption(tr(origin))
     duplicate_count = int(frame["重复 ID"].sum())
@@ -274,11 +332,9 @@ def fasta():
         plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
     st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(named.assign(**{"Source file": name, "Origin": origin})), "fasta_statistics.csv", "text/csv")
     if sequence_type == "nucleotide" and len(frame) >= 2:
-        next_step("下一步：本地序列比对 →", "成对序列比对",
+        next_step("下一步：成对序列比对 →", "成对序列比对",
                   status="序列分析已完成 ✓",
                   summary="当前序列已保存到项目，可直接进行本地比对。")
-    elif st.session_state.get("blast_result"):
-        next_step("下一步：结果可视化 →", "结果可视化", status="序列分析已完成 ✓", result_view="blast")
     else:
         st.caption(tr("当前序列已保存。批量比对需要至少两条核酸记录。"))
 
@@ -303,6 +359,12 @@ def project_blast(project, records):
     st.info(tr("当前运行的是项目内本地 BLAST，仅搜索用户上传的序列，不代表搜索整个 NCBI 数据库。"))
     labels = record_labels(project)
     available = list(records)
+    try:
+        executable_paths()
+        unavailable = None
+    except ValueError as exc:
+        unavailable = str(exc)
+        st.warning(tr(unavailable))
     with st.form("project_blast_search"):
         st.caption(tr("查询或目标留空时使用全部有效序列。"))
         if len(records) != len(project["records"]):
@@ -312,7 +374,7 @@ def project_blast(project, records):
                                       key="local_blast_queries")
         targets = cols[1].multiselect(tr("目标序列（默认全部）"), available, format_func=labels.__getitem__,
                                       key="local_blast_targets")
-        run = st.form_submit_button(tr("使用当前序列运行 BLAST"), type="primary")
+        run = st.form_submit_button(tr("使用当前序列运行 BLAST"), type="primary", disabled=unavailable is not None)
     queries, targets = tuple(queries or available), tuple(targets or available)
     previous = st.session_state.get("local_blast_run")
     if previous and previous["key"][0] != project["key"]:
@@ -328,6 +390,11 @@ def project_blast(project, records):
         else:
             previous = {**result, "timestamp": run_time()}
             st.session_state["local_blast_run"] = previous
+            st.session_state.pop("blast_result", None)
+            st.session_state.pop("_prepared_word_blast", None)
+            for key in list(st.session_state.get("report_figures", {})):
+                if key.startswith("blast_"):
+                    st.session_state["report_figures"].pop(key)
     if previous is None:
         return None
 
@@ -398,25 +465,58 @@ def external_blast(selected):
     return (name, origin, file_key, delimiter, header, mapping, hits)
 
 
+def current_project_blast(project):
+    result = st.session_state.get("local_blast_run")
+    return result if project and result and result["key"][0] == project["key"] else None
+
+
+def project_nucleotide_records(project):
+    return session_result("local_blast_records", project["key"], valid_records, project) if project else {}
+
+
+def blast_search():
+    st.title(tr("BLAST 搜索"))
+    project_status()
+    project = st.session_state.get("project_sequences")
+    available = project_nucleotide_records(project)
+    if available:
+        result = project_blast(project, available)
+        if result:
+            if st.button(tr("下一步：BLAST 候选筛选 →"), type="primary"):
+                st.session_state["local_blast_source_mode"] = LOCAL_BLAST
+                navigate("BLAST 候选筛选")
+    else:
+        st.info(tr("BLAST 搜索需要当前项目中的有效核酸序列。"))
+        next_step("前往数据导入 →", "数据导入与管理")
+    if st.button(tr("导入外部 BLAST 命中表")):
+        st.session_state["local_blast_source_mode"] = EXTERNAL_BLAST
+        navigate("BLAST 候选筛选")
+
+
 def blast():
     st.title(tr("BLAST 候选筛选"))
     st.info(tr(NOTICE))
     project_status()
     project = st.session_state.get("project_sequences")
-    records = session_result("local_blast_records", project["key"], valid_records, project) if project else {}
+    stored_run = current_project_blast(project)
     previous = st.session_state.get("blast_result")
     figures = st.session_state.setdefault("report_figures", {})
     saved_figures = [key for key in figures if key.startswith("blast_")]
-    sources = [LOCAL_BLAST, EXTERNAL_BLAST] if records else [EXTERNAL_BLAST]
+    sources = [LOCAL_BLAST, EXTERNAL_BLAST] if project and project["type"] == "nucleotide" else [EXTERNAL_BLAST]
     if st.session_state.get("local_blast_source_mode") not in sources:
         st.session_state["local_blast_source_mode"] = EXTERNAL_BLAST if st.session_state.get("blast_source") else sources[0]
     mode = st.radio(tr("BLAST 数据来源"), sources, horizontal=True, format_func=translator(), key="local_blast_source_mode")
     local = None
     exclude_identical = False
     if mode == LOCAL_BLAST:
-        local = project_blast(project, records)
+        local = stored_run
         if local is None:
+            st.info(tr("请先完成当前项目的 BLAST 搜索，或选择导入外部命中表。"))
+            next_step("前往 BLAST 搜索 →", "BLAST 搜索")
             return
+        if st.button(tr("← 返回 BLAST 搜索")):
+            navigate("BLAST 搜索")
+        st.caption(tr("当前运行的是项目内本地 BLAST，仅搜索用户上传的序列，不代表搜索整个 NCBI 数据库。"))
         name, origin = project["name"], LOCAL_BLAST
         file_key = sha256(repr(local["key"]).encode()).hexdigest()
         delimiter, header = "\t", "yes"
@@ -431,9 +531,10 @@ def blast():
         if selected is None:
             if previous and not previous.get("local_search"):
                 st.dataframe(previous["filtered"], hide_index=True)
-                next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
+                next_step("下一步：分析结果 →", "分析结果", result_view="blast")
             else:
                 st.info(tr("可选：上传已生成的外部 BLAST 命中表。"))
+                next_step("前往 BLAST 搜索 →", "BLAST 搜索")
             return
         imported = external_blast(selected)
         if imported is None:
@@ -533,7 +634,7 @@ def blast():
     count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)
-    next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
+    next_step("下一步：分析结果 →", "分析结果", result_view="blast")
 
 
 @st.fragment
@@ -549,26 +650,57 @@ def plot_distribution(frame, key, field, title, id_field):
     )
 
 
-def visualization():
-    st.title(tr("结果可视化"))
+RESULT_ORIGINS = {"local": "本地比对候选筛选", "blast": "BLAST 候选筛选"}
+
+
+def result_path():
+    default = st.session_state.get("workflow_path", "local")
+    if not st.session_state.get("workflow_path") and st.session_state.get("blast_result") and not current_candidates():
+        default = "blast"
+    if "result_view" not in st.session_state:
+        st.session_state["result_view"] = default
+    return st.radio(tr("结果来源"), list(RESULT_ORIGINS), horizontal=True, key="result_view",
+                    format_func=lambda path: tr(RESULT_ORIGINS[path]))
+
+
+def show_results():
+    st.title(tr("分析结果"))
     project_status()
-    result = st.session_state.get("blast_result")
-    local = current_candidates()
-    if local is None and result is None:
-        st.info(tr("完成本地比对候选筛选，或导入并筛选 BLAST 命中后，即可绘图。"))
-        if st.session_state.get("batch_alignment") and st.button(tr("本地比对候选筛选")):
-            navigate("本地比对候选筛选")
-        return
-    options = (["local"] if local else []) + (["blast"] if result else [])
-    if st.session_state.get("result_view") not in options:
-        st.session_state["result_view"] = options[0]
-    view = st.radio(tr("结果来源"), options, horizontal=True, key="result_view",
-                    format_func=lambda item: tr("本地比对候选筛选" if item == "local" else "BLAST 候选筛选"))
-    origin = "本地比对候选筛选" if view == "local" else "BLAST 候选筛选"
+    path = result_path()
+    result = current_candidates() if path == "local" else st.session_state.get("blast_result")
+    if result is None:
+        st.info(tr("请先完成所选路径的候选筛选。"))
+    else:
+        frame = result["results" if path == "local" else "filtered"]
+        st.dataframe(display_frame(frame), width="stretch", hide_index=True)
+        filename = "local_candidates.csv" if path == "local" else "blast_filtered.csv"
+        st.download_button(tr("下载当前结果 CSV"), csv_bytes(frame), filename, "text/csv", on_click="ignore")
+        next_step("下一步：可视化与报告 →", "结果可视化")
     if st.button(tr("← 返回候选筛选")):
-        navigate(origin)
-    if view == "local":
-        local_visualization(local)
+        navigate(RESULT_ORIGINS[path])
+
+
+def visualization():
+    st.title(tr("可视化与报告"))
+    project_status()
+    path = result_path()
+    if st.button(tr("← 返回分析结果")):
+        navigate("分析结果")
+    section = st.radio(tr("查看内容"), ["结果可视化", "分析记录与导出"], horizontal=True,
+                       key="result_section", format_func=translator())
+    if section == "分析记录与导出":
+        records(path)
+        return
+    if path == "local":
+        local = current_candidates()
+        if local:
+            local_visualization(local)
+        else:
+            st.info(tr("请先完成所选路径的候选筛选。"))
+        return
+    result = st.session_state.get("blast_result")
+    if result is None:
+        st.info(tr("请先完成所选路径的候选筛选。"))
         return
     hits = result["filtered"]
     st.caption(f'{result["name"]} · {tr(result["origin"])} · {tr("当前筛选结果")}')
@@ -580,10 +712,8 @@ def visualization():
                 ChartStyle("各 Query 候选数量", "Query", "候选数量"), groupable=True)
     if hits.empty:
         st.info(tr("当前没有保留的命中可用于分布图。"))
-        next_step("下一步：导出分析报告 →", "分析记录与导出")
         return
     detail_plot(hits)
-    next_step("下一步：导出分析报告 →", "分析记录与导出")
 
 
 def local_visualization(local):
@@ -596,7 +726,7 @@ def local_visualization(local):
         st.info(tr("当前筛选没有保留本地候选对。"))
     else:
         plot_distribution(hits, "local_candidate_identity", "Identity (%)", "本地候选序列一致性", "Subject Name")
-    next_step("下一步：导出分析报告 →", "分析记录与导出")
+
 
 
 @st.fragment
@@ -620,12 +750,8 @@ def detail_plot(hits):
 
 
 
-def records():
-    st.title(tr("分析记录与导出"))
-    project_status()
-    blast_result = st.session_state.get("blast_result")
-    if (current_candidates() or blast_result) and st.button(tr("← 返回结果可视化")):
-        navigate("结果可视化")
+def records(path):
+    blast_result = st.session_state.get("blast_result") if path == "blast" else None
     local_search = blast_result.get("local_search") if blast_result else None
     metadata = {}
     for label in (*METADATA, "数据库登录号"):
@@ -640,9 +766,8 @@ def records():
         if label in ("BLAST 程序及版本", "参考数据库及版本") and not metadata[label].strip():
             metadata[label] = "未提供"
     fasta_result = st.session_state.get("fasta_result")
-    blast_result = st.session_state.get("blast_result")
-    pairwise_record = st.session_state.get("pairwise_record")
-    batch = st.session_state.get("batch_alignment")
+    pairwise_record = st.session_state.get("pairwise_record") if path == "local" else None
+    batch = st.session_state.get("batch_alignment") if path == "local" else None
     project = st.session_state.get("project_sequences")
     if batch and project and batch["key"][0] == project["key"]:
         pairwise_record = {**export_metadata(project, batch), "Algorithm": "Biopython PairwiseAligner"}
@@ -676,10 +801,10 @@ def records():
 
 
     if fasta_result or blast_result or pairwise_record:
-        report_section(record, blast_result)
+        report_section(record, blast_result, path)
 
 
-def report_section(record, blast_result):
+def report_section(record, blast_result, path):
     st.subheader(tr("Word 分析报告"))
     with st.form("word_report_settings", enter_to_submit=False):
         left, right = st.columns(2)
@@ -692,7 +817,9 @@ def report_section(record, blast_result):
         title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
         background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
         notes = record["科研信息"].get("分析备注", "")
-        figures = st.session_state.get("report_figures", {})
+        prefixes = ("fasta_", "blast_") if path == "blast" else ("fasta_", "local_")
+        figures = {key: value for key, value in st.session_state.get("report_figures", {}).items()
+                   if key.startswith(prefixes)}
         if static_images_enabled():
             selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
         else:
@@ -702,7 +829,7 @@ def report_section(record, blast_result):
             st.caption(tr("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。"))
         metrics = {}
         tables = {}
-        candidate_result = current_candidates()
+        candidate_result = current_candidates() if path == "local" else None
         if candidate_result:
             hits = candidate_result["results"]
             columns = ("Query", "Subject")
@@ -733,6 +860,7 @@ def report_section(record, blast_result):
     signature = sha256(repr((record, title, background, notes, language, mode,
                              [(key, tables[key].to_json()) for key in chosen],
                              [(key, figures[key][1].to_json()) for key in selected_figures])).encode()).digest()
+    prepared_key = f"_prepared_word_{path}"
     if submitted:
         try:
             images = []
@@ -754,8 +882,8 @@ def report_section(record, blast_result):
             st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
         else:
             st.session_state["last_report"] = output
-            st.session_state["_prepared_word"] = (signature, report_title, output)
-    prepared = st.session_state.get("_prepared_word")
+            st.session_state[prepared_key] = (signature, report_title, output)
+    prepared = st.session_state.get(prepared_key)
     if prepared and prepared[0] == signature:
         st.caption(f'{tr("当前报告已就绪")} · {prepared[1]}')
         st.download_button(tr("下载 Word 报告"), prepared[2], "plantlab_geneminer_report.docx",

@@ -23,14 +23,17 @@ def main():
         language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
                               key="language", label_visibility="collapsed")
 
+    labels = {"FASTA 序列分析": "FASTA 序列统计", "结果可视化": "可视化与报告"}
     navigation = {
         "首页": pages.home,
+        "数据导入与管理": pages.sequence_data_page,
         "FASTA 序列分析": pages.fasta,
         "成对序列比对": alignment_page,
+        "BLAST 搜索": pages.blast_search,
         "BLAST 候选筛选": pages.blast,
         "本地比对候选筛选": local_candidates_page,
         "结果可视化": pages.visualization,
-        "分析记录与导出": pages.records,
+        "分析结果": pages.show_results,
         "关于平台": pages.about,
         "帮助中心": help_center,
         "账户": account_page,
@@ -47,6 +50,21 @@ def main():
     if destination:
         st.session_state["page"] = destination
     page = st.session_state.get("page", "首页")
+    if page == "分析记录与导出":
+        page = st.session_state["page"] = "结果可视化"
+        st.session_state["result_section"] = "分析记录与导出"
+    comparison = ("成对序列比对", "本地比对候选筛选")
+    blast = ("BLAST 搜索", "BLAST 候选筛选")
+    groups = (
+        ("项目数据", ("数据导入与管理", "FASTA 序列分析")),
+        ("序列比较与相似性筛选", comparison),
+        ("BLAST 搜索与候选筛选", blast),
+        ("结果管理", ("分析结果", "结果可视化")),
+    )
+    if page in ("FASTA 序列分析", *comparison):
+        st.session_state["workflow_path"] = "local"
+    elif page in blast:
+        st.session_state["workflow_path"] = "blast"
     previous_page = st.session_state.get("_shown_page")
     st.session_state["_shown_page"] = page
     changed_page = previous_page is not None and previous_page != page
@@ -54,7 +72,7 @@ def main():
 
     def show_nav(container, key):
         slot = container.container(key="active_nav") if key == page else container
-        slot.button(tr(key), key=f"nav_{key}", width="stretch",
+        slot.button(tr(labels.get(key, key)), key=f"nav_{key}", width="stretch",
                     on_click=st.session_state.__setitem__, args=("page", key))
 
 
@@ -62,11 +80,7 @@ def main():
         st.html(f'<div class="plantlab-brand"><img src="{brand_mark_uri(compact=True)}" alt="">'
                 f'<div><strong>{NAME}</strong><small>V3.0 · Beta</small></div></div>')
         show_nav(st, "首页")
-        for group, keys in (
-            ("序列分析", ("FASTA 序列分析", "成对序列比对")),
-            ("候选基因分析", ("本地比对候选筛选", "BLAST 候选筛选")),
-            ("结果管理", ("结果可视化", "分析记录与导出")),
-        ):
+        for group, keys in groups:
             with st.expander(tr(group), expanded=page in keys):
                 for entry in keys:
                     show_nav(st, entry)
@@ -86,7 +100,7 @@ def main():
 
     # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
     prefixes = ("local_blast_", "delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
-    controls = {"blast_min_bitscore", "result_view", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
+    controls = {"blast_min_bitscore", "result_view", "result_section", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
                 "alignment_length", "coverage_cutoff", "blast_detail_view", "project_name", "project_species", "project_target", "workspace_auto"}
     for key in list(st.session_state):
         if key in controls or (key != "local_blast_run" and key.startswith(prefixes)):

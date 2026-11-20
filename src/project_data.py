@@ -99,7 +99,7 @@ def invalidate_sequence_results():
     for key in ("fasta_length", "fasta_gc", "local_alignment_matrix", "local_candidate_comparison", "local_candidate_identity"):
         st.session_state.get("report_figures", {}).pop(key, None)
     for key in ("project_sequences", "fasta_result", "batch_alignment", "_batch_history", "_batch_outcome",
-                "_batch_checkpoint", "local_candidates_record", "last_report", "_prepared_word",
+                "_batch_checkpoint", "local_candidates_record", "last_report", "_prepared_word", "_prepared_word_local", "_prepared_word_blast",
                 "pairwise_record", "alignment_setting_candidates_reference", "alignment_setting_batch_indices",
                 "alignment_setting_batch_query", "alignment_setting_batch_pair", "alignment_setting_candidate_pair"):
         st.session_state.pop(key, None)
@@ -131,6 +131,23 @@ def display_labels(info):
     counts = Counter(labels)
     return [f"{label} · [{index + 1}]" if counts[label] > 1 else label
             for index, label in enumerate(labels)]
+
+def project_gene_count(project):
+    groups = set()
+    known = {}
+    for item in project.get("metadata", ()):
+        symbol = (item.get("species", ""), item.get("gene", ""))
+        if item.get("gene_id") and symbol[1]:
+            known.setdefault(symbol, set()).add(item["gene_id"])
+    for item in project.get("metadata", ()):
+        symbol = (item.get("species", ""), item.get("gene", ""))
+        identifiers = known.get(symbol, set())
+        if item.get("gene_id"):
+            groups.add(item["gene_id"])
+        elif symbol[1] and not identifiers:
+            groups.add(symbol)
+    return len(groups)
+
 
 def project_status():
     project = st.session_state.get("project_sequences")

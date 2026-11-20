@@ -116,7 +116,7 @@ def ncbi_source(name, data):
                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                       on_click="ignore")
         csv.download_button(tr("下载 CSV"), csv_bytes(public), "ncbi_sequences.csv", "text/csv", on_click="ignore")
-    clicked = analyze.button(tr("开始序列分析 →"), type="primary", disabled=public.empty)
+    clicked = analyze.button(tr("应用序列到项目"), type="primary", disabled=public.empty)
     applied = st.session_state.get("sequence_ncbi_applied")
     if clicked:
         st.session_state["_sequence_input_metadata"] = table_metadata(public.assign(GeneID=edited["_gene_id"]), include_source=True)
