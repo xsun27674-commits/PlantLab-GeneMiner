@@ -48,50 +48,49 @@ Docker 配置使用 Python 3.11，并在 `0.0.0.0:7860` 上启动 Streamlit。�
 
 应用导入已有 BLAST 结果，数据与记录在当前会话内存中处理。刷新连接或重启后需要重新载入文件。工作流适用于可在内存中交互分析的数据，Excel 每个工作表受 1,048,576 行限制。BLAST 命中仅提供序列相似性证据，基因功能和直系同源关系需要独立验证。
 
-## V1.1 图表、比对与报告
+## V1.1 图表、比对与导出
 
 - FASTA 小样本按序列显示独立柱形。可手动切换柱状图、散点图和直方图。核酸数据可绘制 GC 含量。
 - 可编辑图表颜色、标题、坐标轴和布局，并导入或导出独立的样式 JSON。交互 HTML 包含离线所需脚本。PNG 使用 2 倍像素输出；SVG 和图表 PDF 适用于排版。
-- 使用 Python 3.11 安装更新后的 `requirements.txt`。静态图和 Word 插图需要 Kaleido 与 Chrome/Chromium。若已有浏览器，可设置 `BROWSER_PATH` 指向其可执行文件；也可在虚拟环境中运行 `kaleido_get_chrome` 安装浏览器。中文导出建议安装 Noto Sans CJK SC。Dockerfile 安装 Chromium 和 CJK 字体。
+- 使用 Python 3.11 安装更新后的 `requirements.txt`。静态图需要 Kaleido 与 Chrome/Chromium。若已有浏览器，可设置 `BROWSER_PATH` 指向其可执行文件；也可在虚拟环境中运行 `kaleido_get_chrome` 安装浏览器。中文导出建议安装 Noto Sans CJK SC。Dockerfile 安装 Chromium 和 CJK 字体。
 - 「成对序列比对」支持双序列粘贴或从 FASTA 选择，提供全局与局部比对。每条序列最多 10,000 字符，两条长度之积最多 400 万。同分时采用 Biopython 返回的首个解。一致性分母包含 gap 列。
-- 在「分析记录与导出」选择已生成的图表及结果表，可生成带页码的 Word 报告。Word 每表最多显示 1,000 行，完整筛选结果另见 CSV 和 Excel。
 - FASTA 和 BLAST 上传每个文件限 10 MB，比对页面的 FASTA 限 5 MB。应用在服务器会话内处理数据，上传文件及分析结果不会由应用转发给外部服务。
 - 目前提供 BLAST 表格导入及未来搜索实现接口。本地 BLAST+ 搜索需要可执行程序和参考数据库。尚未提供多维证据综合评分或 PDF 报告。
 
 ### 验证与在线预览
 
-运行 `python -m pytest -q` 检查应用与核心分析逻辑。确认环境具备可用 Chrome 后，使用 `GENEMINER_TEST_IMAGES=1 python -m pytest -q` 一并验证 PNG、SVG、图表 PDF 和 Word 插图。
+运行 `python -m pytest -q` 检查应用与核心分析逻辑。确认环境具备可用 Chrome 后，使用 `GENEMINER_TEST_IMAGES=1 python -m pytest -q` 一并验证 PNG、SVG和图表 PDF。
 
-[打开 V1.1 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v1.1-preview?urlpath=proxy%2F8501%2F)。首次启动可能需要构建容器。Binder 使用轻量模式，支持交互图表、HTML/CSV/JSON、候选导出及无插图 Word。PNG/SVG/PDF 和 Word 插图可在本地或 Docker 使用。预览会话会过期，建议用模拟数据体验。
+[打开 V1.1 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v1.1-preview?urlpath=proxy%2F8501%2F)。首次启动可能需要构建容器。Binder 使用轻量模式，支持交互图表、HTML/CSV/JSON、候选导出。PNG/SVG/PDF可在本地或 Docker 使用。预览会话会过期，建议用模拟数据体验。
 
 ## V3.0
 
-游客可直接运行 FASTA 质检、成对序列比对和 BLAST 结果筛选，游客会话不会自动长期保存。可切换中文和英文界面，报告可独立选择中文或英文、简洁或完整模式。报告中的相似性指标只描述输入和筛选结果，不能证明基因功能或直系同源关系。
+游客可直接运行 FASTA 质检、成对序列比对和 BLAST 结果筛选，游客会话不会自动长期保存。可切换中文和英文界面，相似性指标只描述输入和筛选结果，不能证明基因功能或直系同源关系。
 
 ### 本地开发与 Docker
 
-使用 Python 3.11 创建虚拟环境，安装 `requirements.txt`，在项目目录执行 `python -m streamlit run app.py`。每张图表卡片可直接在浏览器下载 PNG（2 倍清晰度）或 SVG。服务端 PNG/SVG/PDF 和 Word 插图需要 Chrome/Chromium 与 Kaleido，Docker 已包含浏览器和 CJK 字体：
+使用 Python 3.11 创建虚拟环境，安装 `requirements.txt`，在项目目录执行 `python -m streamlit run app.py`。每张图表卡片可直接在浏览器下载 PNG（2 倍清晰度）或 SVG。服务端 PNG/SVG/PDF需要 Chrome/Chromium 与 Kaleido，Docker 已包含浏览器和 CJK 字体：
 
 ```bash
 docker build -t plantlab-geneminer:v3 .
 docker run --rm -p 7860:7860 plantlab-geneminer:v3
 ```
 
-使用 `GENEMINER_DEV_DB=/absolute/private/path/development.sqlite3` 可启用开发账户和持久化项目。该模式供本机调试，不具备公共运营需要的邮件确认、反滥用和限流。不要对互联网启用。备份开发数据库时同时保护其文件及相关卷。将正式横版 PNG 放到 `assets/logo.png`，或用 `GENEMINER_LOGO_PATH` 指定文件。首页、账号页、关于页、侧边栏和 Word 封面会自动使用该文件。可另放方形图标 `assets/logo-icon.png`，或用 `GENEMINER_LOGO_ICON_PATH` 指定浏览器图标。正式资源缺失或无法读取时只显示品牌文字。
+使用 `GENEMINER_DEV_DB=/absolute/private/path/development.sqlite3` 可启用开发账户和持久化项目。该模式供本机调试，不具备公共运营需要的邮件确认、反滥用和限流。不要对互联网启用。备份开发数据库时同时保护其文件及相关卷。将正式横版 PNG 放到 `assets/logo.png`，或用 `GENEMINER_LOGO_PATH` 指定文件。首页、账号页、关于页、侧边栏会自动使用该文件。可另放方形图标 `assets/logo-icon.png`，或用 `GENEMINER_LOGO_ICON_PATH` 指定浏览器图标。正式资源缺失或无法读取时只显示品牌文字。
 
 ### 正式部署及数据存储
 
 1. 在专用 Supabase 项目运行 [deploy/supabase.sql](deploy/supabase.sql)。确认 Email Auth 已启用，开启邮件确认，配置站点 URL、邮件发送服务、密码和速率限制。密码重置模板使用 `{{ .TokenHash }}` 给用户显示一次性的凭证，用户可在「账户 → 忘记密码」提交凭证与新密码。上线前验证注册确认和密码重置邮件。
 2. 在 Hugging Face 创建 Docker Space，上传项目文件。在 Space 的 Variables / Secrets 中设置 `GENEMINER_SUPABASE_URL` 和 `GENEMINER_SUPABASE_PUBLIC_KEY`。使用 HTTPS 项目地址及 publishable 或 legacy anon 客户端密钥，禁止使用 service role。让 Docker 在 7860 端口监听。Space 无需持久磁盘来保存科研项目。
-3. 使用两个浏览器及两个账户验收。账户 A 保存后，在另一浏览器用 A 登录并恢复；用 B 登录，确认无法读写或删除 A 的项目。再验证账户删除、图像下载及 Word 插图。正式部署前核对供应商费用、服务区域、备份保留期和研究数据条款。关闭开发数据库变量。
+3. 使用两个浏览器及两个账户验收。账户 A 保存后，在另一浏览器用 A 登录并恢复；用 B 登录，确认无法读写或删除 A 的项目。再验证账户删除及图像下载。正式部署前核对供应商费用、服务区域、备份保留期和研究数据条款。关闭开发数据库变量。
 
 项目表为 `public.geneminer_projects`。记录 UUID 项目 ID、`auth.users` 所有者、名称、物种、目标、分析状态、创建和修改时间、版本化 JSON 快照。账户的删除通过受限 RPC 执行，外键级联删除项目。PostgreSQL 使用 RLS 检查当前 JWT 的 `auth.uid()`。SQLite 开发库用服务器会话校验并按所有者查询。Supabase 按服务配置的备份周期保留备份。
 
-V3.0 将上传文件（编码在快照中）、分析参数、结果、图表和报告原子地保存在访问隔离的 PostgreSQL 行中。单项目快照限 32 MiB，未配置独立对象存储。自动保存可选，每两分钟检查现有项目，跳过未改动的快照。改动时写入整份快照，多设备同时编辑为最后成功保存者生效。应用使用经过校验的 JSON 恢复状态，不反序列化可执行对象。Supabase 登录凭证留在服务器会话，访问令牌到期后须重新登录。
+V3.0 将上传文件（编码在快照中）、分析参数、结果和图表原子地保存在访问隔离的 PostgreSQL 行中。单项目快照限 32 MiB，未配置独立对象存储。自动保存可选，每两分钟检查现有项目，跳过未改动的快照。改动时写入整份快照，多设备同时编辑为最后成功保存者生效。应用使用经过校验的 JSON 恢复状态，不反序列化可执行对象。Supabase 登录凭证留在服务器会话，访问令牌到期后须重新登录。
 
 ### 教学预览及测试
 
-[打开 V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。Binder 不带生产账户配置，由图表卡片直接导出 PNG/SVG，轻量报告不内嵌图表。Binder 请使用模拟数据。正式在线部署和 Supabase 双设备验收须由所有者配置后验证。
+[打开 V3.0 Binder 教学预览](https://mybinder.org/v2/gh/xsun27674-commits/PlantLab-GeneMiner/v3.0-preview?urlpath=proxy%2F8501%2F)。Binder 不带生产账户配置，由图表卡片直接导出 PNG/SVG。Binder 请使用模拟数据。正式在线部署和 Supabase 双设备验收须由所有者配置后验证。
 
 ```bash
 python -m pytest -q
@@ -102,7 +101,7 @@ GENEMINER_TEST_IMAGES=1 python -m pytest -q
 
 FASTA 分析接收 FASTA、UTF-8 CSV 和 XLSX。表格默认识别 `Sequence ID` 与 `Sequence`，也可手动映射两列。在线表格可直接编辑，也可通过「粘贴两列文本」从电子表格导入制表符分隔的数据，然后点击「分析表格」。序列表最多 5,000 行，上传文件最多 10 MB。编号应使用无空格的标识；保留前导零的编号在 Excel 中应存为文本。从首页选择研究路径后，两个流程均使用项目中已导入的序列。
 
-面向公众的完整 Beta 可部署为 Docker Space。镜像使用 Python 3.11，安装 Chromium 与 CJK 字体，在 `0.0.0.0:7860` 启动 Streamlit。以 `/_stcore/health` 验证启动，再在独立浏览器会话验证真实上传、图例、PNG/SVG 及嵌图 DOCX。Binder 是无需登录的教学启动入口，首次构建有冷启动时间，Word 导出在其轻量配置下不带图。GitHub 推送不会自动更新外部 Space。
+面向公众的完整 Beta 可部署为 Docker Space。镜像使用 Python 3.11，安装 Chromium 与 CJK 字体，在 `0.0.0.0:7860` 启动 Streamlit。以 `/_stcore/health` 验证启动，再在独立浏览器会话验证真实上传、图例及 PNG/SVG。Binder 是无需登录的教学启动入口，首次构建有冷启动时间。GitHub 推送不会自动更新外部 Space。
 
 ### 从 NCBI Datasets 导入 CDS ZIP
 
@@ -114,17 +113,17 @@ ZIP 上限为 10 MiB、512 个成员、总解压大小 64 MiB；CDS 内容总大
 
 在「数据导入与管理」中应用 FASTA、常规序列表或 NCBI ZIP 后，当前项目会记录标准化序列和来源。明确带 CDS 或 Length (bp) 字段的表格自动按核酸处理，普通表格可选择核酸或蛋白质。下一步进入从首页选择的路径。游客使用当前会话，已配置持久化服务的登录用户可以通过原有的「保存项目」操作持久化。
 
-首页提供「序列比较与相似性筛选」和「BLAST 搜索与候选筛选」。两条路径共享项目导入的序列，分别保存候选结果。序列比较依次进入 FASTA 序列统计、成对序列比对和本地比对候选筛选。BLAST 路径由搜索直接进入 BLAST 候选筛选。两条路径均可在「分析结果」下载 CSV，并在「可视化与报告」选择对应来源、查看图表并导出 Word。替换项目序列时，系统会清除依赖旧序列的结果。
+首页提供「序列比较与相似性筛选」和「BLAST 搜索与候选筛选」。两条路径共享项目导入的序列，分别保存候选结果。序列比较依次进入 FASTA 序列统计、成对序列比对和本地比对候选筛选。BLAST 路径由搜索直接进入 BLAST 候选筛选。两条路径均可在「分析结果」下载 CSV，并在「可视化与导出」选择对应来源、查看图表并下载数据和参数。替换项目序列时，系统会清除依赖旧序列的结果。
 
 批量核酸比对支持全部或指定记录、All-vs-All、One-vs-All 和按已核实基因分组。All-vs-All 默认跳过自比对及重复方向，63 条共 1,953 对。资源预算为 12,000 对、每对 6,400 万及整批 120 亿估算动态规划单元。超过预算可缩小范围、用单查询或按基因分组。单个独立工作进程运行比对，网页显示任务数量、进度和耗时。取消后可在当前会话以相同参数续算。关闭会话或重启应用会丢失未完成进度，已保存项目可恢复当前已完成批次。
 
 Biopython PairwiseAligner 使用全局或局部模式。一致性以包含缺口的全部比对列为分母，覆盖度以比对消耗的碱基数除以对应序列全长计算。局部无正分结果时一致性留空。默认名称为基因符号与登录号，方括号用于区分重名的界面记录。矩阵支持基因排序、平均连接相似性排序、缩放、按格查看碱基级比对及 PNG/SVG 导出。相似性聚类只用于探索。完整矩阵可下载为 CSV/XLSX。
 
-本地候选页支持参考序列、排除自比对以及一致性、长度、覆盖度、原始得分及缺口数筛选。报告记录来源、参数、结果和序列标识。Binder 轻量模式可下载图片和文字表格报告，Word 插图使用本地或 Docker 版本。标准 BLAST CSV/XLSX 可重新导入 BLAST 模块。
+本地候选页支持参考序列、排除自比对以及一致性、长度、覆盖度、原始得分及缺口数筛选。分析记录保留来源、参数、结果和序列标识。标准 BLAST CSV/XLSX 可重新导入 BLAST 模块。
 
 ### 项目内 BLAST 候选筛选
 
-在首页选择「开始 BLAST 分析」，进入「BLAST 搜索」并点击「使用当前序列运行 BLAST」。查询和目标均默认使用当前项目全部有效序列，也可分别选择子集。系统用 `makeblastdb` 创建临时数据库，再运行 `blastn`；搜索范围只包括选中的项目序列。命中会自动进入筛选、可视化与报告，原始 TSV 下载为可选操作。「外部 BLAST 命中表」仍可上传。默认隐藏自命中以及所有完全相同序列之间的命中。
+在首页选择「开始 BLAST 分析」，进入「BLAST 搜索」并点击「使用当前序列运行 BLAST」。查询和目标均默认使用当前项目全部有效序列，也可分别选择子集。系统用 `makeblastdb` 创建临时数据库，再运行 `blastn`；搜索范围只包括选中的项目序列。命中会自动进入筛选、可视化与导出，原始 TSV 下载为可选操作。「外部 BLAST 命中表」仍可上传。默认隐藏自命中以及所有完全相同序列之间的命中。
 
 Binder 通过 `binder/apt.txt` 安装 `ncbi-blast+` 和 `util-linux`，Dockerfile 同样安装这两项。本地 Debian/Ubuntu 可运行 `sudo apt-get install ncbi-blast+ util-linux`。启动前可用 `blastn -version` 和 `makeblastdb -version` 检查 PATH。
 

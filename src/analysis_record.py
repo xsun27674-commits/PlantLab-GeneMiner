@@ -1,4 +1,4 @@
-"""Session analysis record used identically by JSON, Excel and document exports."""
+"""Session analysis record used identically by JSON and Excel exports."""
 
 from dataclasses import asdict
 

@@ -19,7 +19,7 @@ from src.chart_editor import browser_chart
 from src.export_utils import csv_bytes, excel_bytes
 from src.i18n import tr
 from src.project_data import current_candidates, record_info, record_labels, project_status
-from src.transcripts import analysis_transcripts
+from src.transcripts import analysis_transcripts, isoform_hit_mask
 from src.timing import session_result
 
 
@@ -319,10 +319,17 @@ def local_candidates_page():
                                  format_func=lambda value: labels[value] if value is not None else tr("全部"))
         exclude = st.checkbox(tr("排除自比对"), value=True, key="alignment_setting_candidates_exclude")
         order = st.selectbox(tr("排序指标"), list(thresholds), key="alignment_setting_candidates_sort")
-        selected = filter_candidates(results, reference, thresholds, exclude, order)
+        exclude_isoforms = st.checkbox(tr("排除同一基因的不同转录本比对"),
+                                       key="alignment_setting_candidates_exclude_isoforms")
+        eligible = results
+        if exclude_isoforms:
+            mask = session_result("local_isoform_matches", stored["key"], isoform_hit_mask, results, project)
+            eligible = results.loc[~mask]
+        selected = filter_candidates(eligible, reference, thresholds, exclude, order)
         settings = {"key": stored["key"], "minimum_identity": minimum, "minimum_length": length,
                     "minimum_score": score, "count": len(selected), "thresholds": thresholds,
-                    "reference": reference, "exclude_self": exclude, "sort": order, "before": len(results)}
+                    "reference": reference, "exclude_self": exclude, "exclude_isoforms": exclude_isoforms,
+                    "sort": order, "before": len(results)}
         previous = current_candidates()
         if previous is None or any(previous.get(name) != value for name, value in settings.items()):
             figures = st.session_state.get("report_figures", {})
@@ -332,10 +339,11 @@ def local_candidates_page():
         st.caption(f"{len(selected):,} / {len(results):,} {tr('对')}")
         st.dataframe(selected, hide_index=True)
         downloads(selected, {**export_metadata(project, stored), **{f"Filter {key}": val for key, val in thresholds.items()},
-                             "Reference Internal ID": reference, "Exclude self": exclude, "Sort": order},
+                             "Reference Internal ID": reference, "Exclude self": exclude,
+                             "Exclude same-gene isoforms": exclude_isoforms, "Sort": order},
                   "local_candidates", "candidates")
         render_pair_picker(project, stored, list(selected.index), "candidate", show_sequences=True)
-        if st.button(tr("下一步：可视化与报告 →"), type="primary"):
+        if st.button(tr("下一步：可视化与导出 →"), type="primary"):
             st.session_state["result_view"] = "local"
             st.session_state["result_section"] = "结果可视化"
             go_to("结果可视化")

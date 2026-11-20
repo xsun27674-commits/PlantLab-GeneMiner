@@ -23,7 +23,7 @@ def main():
         language_ui.selectbox("中文 / English", ("zh", "en"), format_func={"zh": "中文", "en": "English"}.get,
                               key="language", label_visibility="collapsed")
 
-    labels = {"FASTA 序列分析": "FASTA 序列统计", "结果可视化": "可视化与报告"}
+    labels = {"FASTA 序列分析": "FASTA 序列统计", "结果可视化": "可视化与导出"}
     navigation = {
         "首页": pages.home,
         "数据导入与管理": pages.sequence_data_page,
@@ -99,7 +99,7 @@ def main():
         show_nav(st, "我的项目")
 
     # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
-    prefixes = ("local_blast_", "delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
+    prefixes = ("local_blast_", "delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
     controls = {"blast_min_bitscore", "result_view", "result_section", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
                 "alignment_length", "coverage_cutoff", "blast_detail_view", "project_name", "project_species", "project_target", "workspace_auto"}
     for key in list(st.session_state):

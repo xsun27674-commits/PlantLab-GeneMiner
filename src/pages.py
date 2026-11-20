@@ -17,8 +17,7 @@ from src.account_page import navigate, save_button
 
 from src import visualization as charts
 from src.analysis_record import VERSION, build_record
-from src.chart_editor import ChartStyle, chart_panel, image_bytes, static_images_enabled
-from src.report import word_report
+from src.chart_editor import ChartStyle, chart_panel
 from src.blast_utils import (
     COVERAGE, REQUIRED, Thresholds, best_hits, candidate_counts, filter_hits,
     normalize_hits, parse_evalue, read_blast, rejection_reasons, suggest_mapping,
@@ -31,7 +30,7 @@ from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
 from src.project_data import classify_table, clear_sequence_project, current_candidates, invalidate_sequence_results, project_status, record_info, record_labels, project_gene_count, register_sequences, sequence_columns, table_metadata
 from src.transcripts import EVIDENCE_FIELDS, EXCLUDE_ISOFORMS, analysis_transcripts, isoform_hit_mask
-from src.timing import elapsed, session_result
+from src.timing import session_result
 
 DATA = Path(__file__).resolve().parents[1] / "data"
 EXAMPLES = {
@@ -60,7 +59,6 @@ def source(kind, extensions):
             st.session_state.pop("sequence_ncbi_applied", None)
         else:
             st.session_state.pop("blast_result", None)
-            st.session_state.pop("last_report", None)
             for key in list(st.session_state.get("report_figures", {})):
                 if key.startswith("blast_"):
                     st.session_state["report_figures"].pop(key)
@@ -411,7 +409,6 @@ def project_blast(project, records):
             previous = {**result, "timestamp": run_time()}
             st.session_state["local_blast_run"] = previous
             st.session_state.pop("blast_result", None)
-            st.session_state.pop("_prepared_word_blast", None)
             for key in list(st.session_state.get("report_figures", {})):
                 if key.startswith("blast_"):
                     st.session_state["report_figures"].pop(key)
@@ -558,7 +555,7 @@ def blast():
         if selected is None:
             if previous and not previous.get("local_search"):
                 st.dataframe(previous["filtered"], hide_index=True)
-                next_step("下一步：可视化与报告 →", "结果可视化", result_view="blast")
+                next_step("下一步：可视化与导出 →", "结果可视化", result_view="blast")
             else:
                 st.info(tr("可选：上传已生成的外部 BLAST 命中表。"))
                 next_step("前往 BLAST 搜索 →", "BLAST 搜索")
@@ -676,7 +673,7 @@ def blast():
     count_tab.dataframe(readable_results(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)
-    next_step("下一步：可视化与报告 →", "结果可视化", result_view="blast")
+    next_step("下一步：可视化与导出 →", "结果可视化", result_view="blast")
 
 
 @st.fragment
@@ -740,13 +737,13 @@ def show_results():
         st.dataframe(readable_results(frame), width="stretch", hide_index=True)
         filename = "local_candidates.csv" if path == "local" else "blast_filtered.csv"
         st.download_button(tr("下载当前结果 CSV"), csv_bytes(frame), filename, "text/csv", on_click="ignore")
-        next_step("下一步：可视化与报告 →", "结果可视化")
+        next_step("下一步：可视化与导出 →", "结果可视化")
     if st.button(tr("← 返回候选筛选")):
         navigate(RESULT_ORIGINS[path])
 
 
 def visualization():
-    st.title(tr("可视化与报告"))
+    st.title(tr("可视化与导出"))
     project_status()
     path = result_path()
     if st.button(tr("← 返回分析结果")):
@@ -842,6 +839,7 @@ def records(path):
                 "最低一致性 (%)": candidates["minimum_identity"], "最短比对长度": candidates["minimum_length"],
                 "最低比对得分": candidates["minimum_score"], "本地候选对数": candidates["count"],
                 "Reference Internal ID": candidates["reference"], "Exclude self": candidates["exclude_self"],
+                "排除同一基因的不同转录本比对": candidates.get("exclude_isoforms", False),
                 "Sort": candidates["sort"], **{f"Filter {key}": val for key, val in candidates["thresholds"].items()},
             })
     record = build_record(metadata, fasta_result, blast_result, pairwise_record)
@@ -865,96 +863,6 @@ def records(path):
         )
 
 
-    if fasta_result or blast_result or pairwise_record:
-        report_section(record, blast_result, path)
-
-
-def report_section(record, blast_result, path):
-    st.subheader(tr("Word 分析报告"))
-    with st.form("word_report_settings", enter_to_submit=False):
-        left, right = st.columns(2)
-        language = left.selectbox(tr("报告语言"), ("zh", "en"),
-                                  format_func={"zh": "中文报告", "en": "English Report"}.get,
-                                  key="report_setting_language")
-        mode = right.selectbox(tr("报告模式"), ("full", "concise"),
-                               format_func=lambda key, translate=translator(): translate("完整版" if key == "full" else "简洁版"),
-                               key="report_setting_mode")
-        title = st.text_input(tr("报告标题"), max_chars=200, key="report_setting_title")
-        background = st.text_area(tr("研究背景"), max_chars=5000, key="report_setting_background")
-        notes = record["科研信息"].get("分析备注", "")
-        prefixes = ("fasta_", "blast_") if path == "blast" else ("fasta_", "local_")
-        figures = {key: value for key, value in st.session_state.get("report_figures", {}).items()
-                   if key.startswith(prefixes)}
-        if static_images_enabled():
-            selected_figures = st.multiselect(tr("插入图表"), list(figures), format_func=lambda key: tr(figures[key][0]))
-        else:
-            selected_figures = []
-            st.caption(tr("轻量预览支持 Word 文字与表格。带图报告请使用本地或 Docker 版本。"))
-        if static_images_enabled() and not figures:
-            st.caption(tr("访问 FASTA 或结果可视化页面后，可在此选择已生成的图表。"))
-        metrics = {}
-        tables = {}
-        candidate_result = current_candidates() if path == "local" else None
-        if candidate_result:
-            hits = candidate_result["results"]
-            columns = ("Query", "Subject")
-            table = pd.DataFrame({
-                side: hits[f"{side} Name"] + "\n" + hits[f"{side} Original Sequence ID"] + "\n" + hits[f"{side} Internal ID"]
-                for side in columns
-            }).assign(**{column: hits[column] for column in ("Identity (%)", "Alignment Length", "Alignment Score", "Gaps")})
-            tables["本地比对候选筛选"] = table
-            metrics["本地候选对数"] = candidate_result["count"]
-        if blast_result:
-            hits = blast_result["filtered"]
-            tables.update({"候选基因列表": hits, "各 Query 候选数量": blast_result["counts"],
-                           "最佳命中": blast_result["best"]})
-            total = blast_result["before"]
-            metrics.update({"原始命中数": total, "筛选后命中数": len(hits),
-                            "保留比例": f"{len(hits)/total:.1%}" if total else "0.0%"})
-            if not hits.empty:
-                coverage_fields = coverage_options(hits)
-                if coverage_fields:
-                    coverage = coverage_fields[0]
-                    low_coverage = int(((hits["pident"] >= 90) & (hits[coverage] < 50)).sum())
-                    metrics[f'{tr("高一致性且低覆盖度命中", language)} (pident ≥ 90%, {coverage} < 50%)'] = low_coverage
-                metrics.update({"一致性中位数（%）": f"{hits['pident'].median():.2f}",
-                                "比对长度中位数": f"{hits['length'].median():g}",
-                                "比特得分中位数": f"{hits['bitscore'].median():g}"})
-        chosen = st.multiselect(tr("导出结果表"), list(tables), default=list(tables), format_func=translator())
-        submitted = st.form_submit_button(tr("准备 Word 报告"), type="primary")
-    signature = sha256(repr((record, title, background, notes, language, mode,
-                             [(key, tables[key].to_json()) for key in chosen],
-                             [(key, figures[key][1].to_json()) for key in selected_figures])).encode()).digest()
-    prepared_key = f"_prepared_word_{path}"
-    if submitted:
-        try:
-            images = []
-            for key in selected_figures:
-                chart_title, original = figures[key]
-                figure = type(original)(original)
-                figure.update_layout(title_text=tr(chart_title, language))
-                axes = (figure.layout.xaxis, figure.layout.yaxis)
-                source_labels = (figure.layout.meta or {}).get("axis_source", [axis.title.text for axis in axes])
-                for axis, label in zip(axes, source_labels):
-                    axis.title.text = tr(label, language)
-                with elapsed("word_images"):
-                    images.append((chart_title, image_bytes(figure, "png")))
-            report_title = tr(title.strip() or "PlantLab-GeneMiner 分析报告", language)
-            with elapsed("word_docx"):
-                output = word_report(report_title, background, notes,
-                                     record, metrics, {key: tables[key] for key in chosen}, images, language, mode)
-        except Exception:
-            st.error(tr("Word 报告生成失败。若选了图表，请检查 Kaleido 与 Chromium，或取消插图后重试。"))
-        else:
-            st.session_state["last_report"] = output
-            st.session_state[prepared_key] = (signature, report_title, output)
-    prepared = st.session_state.get(prepared_key)
-    if prepared and prepared[0] == signature:
-        st.caption(f'{tr("当前报告已就绪")} · {prepared[1]}')
-        st.download_button(tr("下载 Word 报告"), prepared[2], "plantlab_geneminer_report.docx",
-                           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                           on_click="ignore", key="current_word_report")
-
 
 def about():
     brand_banner()
@@ -967,7 +875,7 @@ def about():
         ("成对序列比对", "对两条核酸或蛋白质序列执行全局或局部比对。"),
         ("结果可视化", "比较分布、覆盖度与各 Query 的候选数量。"),
         ("图表编辑与导出", "编辑 Plotly 样式并下载图像、HTML、CSV 或 JSON 配置。"),
-        ("分析记录与报告", "导出可复查的参数、候选表和带图的 Word 报告。"),
+        ("分析记录与导出", "导出可复查的分析参数和候选表。"),
     )
     for index in range(0, len(cards), 3):
         for column, (title, description) in zip(st.columns(3), cards[index:index + 3]):

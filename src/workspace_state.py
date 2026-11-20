@@ -15,12 +15,12 @@ from src.blast_utils import Thresholds
 from src.chart_editor import ChartStyle, validate_style
 
 RECORDS = {"project_sequences", "batch_alignment", "local_candidates_record", "fasta_result", "blast_result", "pairwise_result", "pairwise_record", "report_figures",
-           "fasta_source", "blast_source", "local_blast_run", "last_report", "alignment_fasta", "sequence_grid_base", "sequence_grid_source", "sequence_ncbi_applied",
+           "fasta_source", "blast_source", "local_blast_run", "alignment_fasta", "sequence_grid_base", "sequence_grid_source", "sequence_ncbi_applied",
            "sequence_ncbi_table", "sequence_ncbi_selection", "sequence_ncbi_revision"}
 SCALARS = {"workflow_path", "result_section", "blast_min_bitscore", "result_view", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
            "alignment_length", "coverage_cutoff", "blast_preset", "sequence_input_mode"}
 PREFIXES = ("local_blast_", "delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_",
-            "chart_style_", "chart_defaults_", "report_setting_", "alignment_setting_")
+            "chart_style_", "chart_defaults_", "alignment_setting_")
 TYPES = {"ChartStyle": ChartStyle, "Thresholds": Thresholds, "AlignmentResult": AlignmentResult}
 
 

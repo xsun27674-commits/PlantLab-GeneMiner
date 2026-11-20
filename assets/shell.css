@@ -109,10 +109,6 @@
     }
 }
 
-[data-test-script-state="running"] .st-key-current_word_report button {
-    visibility: hidden;
-}
-
 .st-key-workflow_step {
     padding: .8rem 1rem;
     background: #f0f8f3;

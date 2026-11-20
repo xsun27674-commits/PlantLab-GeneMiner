@@ -33,8 +33,8 @@ def test_example_workflow_and_navigation():
     app.text_input(key="research_项目名称").set_value("教学验证").run()
     assert not app.exception
     assert len(app.get("download_button")) == 3
-    next(button for button in app.button if button.label == "准备 Word 报告").click().run()
-    assert len(app.get("download_button")) == 4
+    assert not any("Word" in button.label for button in app.button)
+    assert not any("Word" in item.proto.label for item in app.get("download_button"))
 
     app.sidebar.button(key="nav_BLAST 候选筛选").click().run()
     assert not app.exception
@@ -64,8 +64,8 @@ def test_lightweight_preview_keeps_interactive_export(monkeypatch):
     assert not any(widget.label == "插入图表" for widget in app.multiselect)
     assert not app.exception
     assert len(app.get("download_button")) == 1
-    next(button for button in app.button if button.label == "准备 Word 报告").click().run()
-    assert len(app.get("download_button")) == 2
+    assert not any("Word" in button.label for button in app.button)
+    assert not any("Word" in item.proto.label for item in app.get("download_button"))
 
 
 def test_language_switch_keeps_fasta_analysis():
@@ -130,3 +130,41 @@ def test_clear_project_data_removes_current_results_and_keeps_project_identity(m
     assert state["project_name"] == "saved project"
     assert not {"project_sequences", "blast_result", "pairwise_result", "blast_source",
                 "fasta_source", "_timed_batch_plan", "report_figures"} & state.keys()
+
+
+def test_local_isoform_filter_is_opt_in_and_uses_filtered_plot_data():
+    from src.batch_alignment import make_plan, run_batch
+
+    genes = ("RCK", "RCK", "MLH3", "MLH3", "MLH1")
+    records = [(f"SIM_{i}", "ACGT" * 20 + "A" * i) for i in range(len(genes))]
+    project = {"key": ("fixture", "abcd"), "type": "nucleotide", "name": "fixture", "origin": "test",
+               "records": records, "metadata": [
+                   {"gene": gene, "gene_id": gene, "species": "Arabidopsis thaliana", "accession": f"SIM_{i}.1"}
+                   for i, gene in enumerate(genes)]}
+    scores = (2, -1, -3, -1)
+    indices = tuple(range(len(records)))
+    clean, pairs, _ = make_plan(records, indices)
+    raw = run_batch(records, clean, pairs, "global", scores)
+    batch = {"key": (project["key"], indices, None, "global", scores, False),
+             "results": raw, "pairs": pairs, "time": "test"}
+    app = AppTest.from_file(str(APP), default_timeout=25)
+    app.session_state["project_sequences"] = project
+    app.session_state["batch_alignment"] = batch
+    app.session_state["page"] = "本地比对候选筛选"
+    app.run()
+    checkbox = "alignment_setting_candidates_exclude_isoforms"
+    assert not app.checkbox(key=checkbox).value
+    assert len(app.session_state["local_candidates_record"]["results"]) == 10
+    app.checkbox(key=checkbox).check().run()
+    filtered = app.session_state["local_candidates_record"]["results"]
+    assert len(filtered) == 8
+    assert not (filtered["Query Gene"] == filtered["Subject Gene"]).any()
+    assert ((filtered["Query Gene"] == "MLH3") & (filtered["Subject Gene"] == "MLH1")).any()
+    next(button for button in app.button if button.label == "下一步：可视化与导出 →").click().run()
+    assert not app.exception
+    fig = app.session_state["report_figures"]["local_candidate_identity"][1]
+    assert len(fig.data[0].x) == 8
+    app.sidebar.button(key="nav_本地比对候选筛选").click().run()
+    app.checkbox(key=checkbox).uncheck().run()
+    assert len(app.session_state["local_candidates_record"]["results"]) == 10
+    assert app.session_state["batch_alignment"]["results"].equals(raw)
