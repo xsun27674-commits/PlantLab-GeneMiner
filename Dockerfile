@@ -2,7 +2,7 @@
 FROM python:3.11-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends chromium fonts-noto-cjk \
+    && apt-get install -y --no-install-recommends chromium fonts-noto-cjk ncbi-blast+ util-linux \
     && rm -rf /var/lib/apt/lists/*
 ENV BROWSER_PATH=/usr/bin/chromium
 

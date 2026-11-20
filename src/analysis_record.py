@@ -18,6 +18,13 @@ def build_record(metadata, fasta_result=None, blast_result=None, pairwise_record
             "分隔符": blast_result["delimiter"],
             "表头模式": blast_result["header"],
         }
+        if search := blast_result.get("local_search"):
+            record["BLAST"].update({
+                "BLAST 程序及版本": search["version"], "分析时间（UTC）": search["timestamp"],
+                "参考数据库及版本": "当前项目序列（临时核酸库）", "查询序列数": search["query_count"],
+                "目标序列数": search["target_count"], "搜索 E-value 上限": search["evalue"],
+                "隐藏自命中及完全相同的序列命中": search["exclude_identical"],
+            })
         record["字段映射"] = blast_result["mapping"]
         record["筛选阈值"] = asdict(blast_result["thresholds"])
     if pairwise_record:

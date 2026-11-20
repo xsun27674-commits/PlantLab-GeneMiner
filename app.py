@@ -85,11 +85,11 @@ def main():
         show_nav(st, "我的项目")
 
     # Keep scalar analysis controls across views. Upload bytes are retained by the uploader callback.
-    prefixes = ("delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
-    controls = {"result_view", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
+    prefixes = ("local_blast_", "delimiter_", "header_", "mapping_", "coverage_", "research_", "chart_mode_", "report_setting_", "alignment_setting_", "sequence_input_", "ncbi_transcripts_", "ncbi_accessions_")
+    controls = {"blast_min_bitscore", "result_view", "fasta_example", "blast_example", "sequence_type", "identity", "evalue",
                 "alignment_length", "coverage_cutoff", "blast_detail_view", "project_name", "project_species", "project_target", "workspace_auto"}
     for key in list(st.session_state):
-        if key in controls or key.startswith(prefixes):
+        if key in controls or (key != "local_blast_run" and key.startswith(prefixes)):
             st.session_state[key] = st.session_state[key]
 
     navigation[page]()

@@ -121,3 +121,11 @@ ZIP 上限为 10 MiB、512 个成员、总解压大小 64 MiB；CDS 内容总大
 Biopython PairwiseAligner 使用全局或局部模式。一致性以包含缺口的全部比对列为分母，覆盖度以比对消耗的碱基数除以对应序列全长计算。局部无正分结果时一致性留空。默认名称为基因符号与登录号，方括号用于区分重名的界面记录。矩阵支持基因排序、平均连接相似性排序、缩放、按格查看碱基级比对及 PNG/SVG 导出。相似性聚类只用于探索。完整矩阵可下载为 CSV/XLSX。
 
 本地候选页支持参考序列、排除自比对以及一致性、长度、覆盖度、原始得分及缺口数筛选。报告记录来源、参数、结果和序列标识。Binder 轻量模式可下载图片和文字表格报告，Word 插图使用本地或 Docker 版本。标准 BLAST CSV/XLSX 可重新导入 BLAST 模块。
+
+### 项目内 BLAST 候选筛选
+
+在 FASTA 页面载入并应用核酸序列后，进入「BLAST 候选筛选」，选择「项目内本地 BLAST」，再点击「使用当前序列运行 BLAST」。查询和目标均默认使用当前项目全部有效序列，也可分别选择子集。系统用 `makeblastdb` 创建临时数据库，再运行 `blastn`；搜索范围只包括选中的项目序列。命中会自动进入筛选、可视化与报告，原始 TSV 下载为可选操作。「外部 BLAST 命中表」仍可上传。默认隐藏自命中以及所有完全相同序列之间的命中。
+
+Binder 通过 `binder/apt.txt` 安装 `ncbi-blast+` 和 `util-linux`，Dockerfile 同样安装这两项。本地 Debian/Ubuntu 可运行 `sudo apt-get install ncbi-blast+ util-linux`。启动前可用 `blastn -version` 和 `makeblastdb -version` 检查 PATH。
+
+本地搜索每次使用一个线程，每次最多 128 条查询和 128 条目标序列，每侧总长最多 500,000 bp，单条最长 50,000 bp。建库超时 15 秒，搜索超时 45 秒。Linux 上可用 `prlimit` 时限制进程虚拟内存为 768 MiB。搜索固定 E-value 上限为 10，每对最多保留 5 个 HSP。临时目录在任务完成或失败后清理。

@@ -88,6 +88,14 @@ def register_sequences(fingerprint, name, origin, sequence_type, data, metadata=
 
 def invalidate_sequence_results():
     stop_batch()
+    if (st.session_state.get("blast_result") or {}).get("local_search"):
+        st.session_state.pop("blast_result", None)
+        figures = st.session_state.get("report_figures", {})
+        for chart in list(figures):
+            if chart.startswith("blast_"):
+                figures.pop(chart)
+    for key in ("local_blast_run", "local_blast_queries", "local_blast_targets", "local_blast_source_mode"):
+        st.session_state.pop(key, None)
     for key in ("fasta_length", "fasta_gc", "local_alignment_matrix", "local_candidate_comparison", "local_candidate_identity"):
         st.session_state.get("report_figures", {}).pop(key, None)
     for key in ("project_sequences", "fasta_result", "batch_alignment", "_batch_history", "_batch_outcome",

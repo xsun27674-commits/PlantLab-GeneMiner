@@ -18,6 +18,7 @@ def test_example_workflow_and_navigation():
 
     app.sidebar.button(key="nav_BLAST 候选筛选").click().run()
     assert not app.exception
+    app.radio(key="local_blast_source_mode").set_value("外部 BLAST 命中表").run()
     app.checkbox(key="blast_example").check().run()
     app.text_input(key="evalue").set_value("0").run()
     assert not app.exception

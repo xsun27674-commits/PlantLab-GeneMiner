@@ -25,6 +25,7 @@ from src.blast_utils import (
 )
 from src.export_utils import csv_bytes, excel_bytes, json_bytes
 from src.batch_alignment_page import export_metadata
+from src.local_blast import FIELDS as LOCAL_BLAST_FIELDS, SEARCH_EVALUE, run_local_blast, valid_records
 from src.fasta_utils import analyze_fasta
 from src.sequence_input import read_sequence_table, table_to_fasta
 from src.ncbi_page import ncbi_link, ncbi_source
@@ -294,23 +295,53 @@ def reject_blast_table(kind, missing):
     raise ValueError("BLAST 表格缺少必需字段：" + "、".join(missing))
 
 
-def blast():
-    st.title(tr("BLAST 候选筛选"))
-    st.info(tr(NOTICE))
-    project_status()
-    st.link_button(tr("前往 NCBI BLAST 官方页面 ↗"), "https://blast.ncbi.nlm.nih.gov/Blast.cgi")
-    previous = st.session_state.get("blast_result")
-    figures = st.session_state.setdefault("report_figures", {})
-    saved_figures = [key for key in figures if key.startswith("blast_")]
-    selected = source("blast", ["csv", "tsv", "txt", "tab", "out", "xlsx"])
-    if selected is None:
-        existing = st.session_state.get("blast_result")
-        if existing:
-            st.dataframe(existing["filtered"], hide_index=True)
-            next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
+LOCAL_BLAST = "项目内本地 BLAST"
+EXTERNAL_BLAST = "外部 BLAST 命中表"
+
+
+def project_blast(project, records):
+    st.info(tr("当前运行的是项目内本地 BLAST，仅搜索用户上传的序列，不代表搜索整个 NCBI 数据库。"))
+    labels = record_labels(project)
+    available = list(records)
+    with st.form("project_blast_search"):
+        st.caption(tr("查询或目标留空时使用全部有效序列。"))
+        if len(records) != len(project["records"]):
+            st.warning(tr("空序列或含非法字符的记录已排除。"))
+        cols = st.columns(2)
+        queries = cols[0].multiselect(tr("查询序列（默认全部）"), available, format_func=labels.__getitem__,
+                                      key="local_blast_queries")
+        targets = cols[1].multiselect(tr("目标序列（默认全部）"), available, format_func=labels.__getitem__,
+                                      key="local_blast_targets")
+        run = st.form_submit_button(tr("使用当前序列运行 BLAST"), type="primary")
+    queries, targets = tuple(queries or available), tuple(targets or available)
+    previous = st.session_state.get("local_blast_run")
+    if previous and previous["key"][0] != project["key"]:
+        previous = None
+    if run and (not previous or previous["key"] != (project["key"], queries, targets)):
+        try:
+            with st.spinner(tr("正在建立项目数据库并运行 blastn…"), show_time=True):
+                result = run_local_blast(project, records, queries, targets)
+        except ValueError as exc:
+            st.error(tr(str(exc)))
+            if previous:
+                st.caption(tr("以下显示上次成功的搜索结果。"))
         else:
-            st.info(tr("当前项目尚无 BLAST 命中结果。您可以使用本地序列比对功能，或上传外部 BLAST 结果。"))
-        return
+            previous = {**result, "timestamp": run_time()}
+            st.session_state["local_blast_run"] = previous
+    if previous is None:
+        return None
+
+    hits = previous["hits"]
+    st.success(f'{tr("本地 BLAST 已完成")} · {previous["version"]} · {len(hits)} {tr("条命中")}')
+    st.caption(f'{tr("查询序列数")} {previous["query_count"]} · {tr("目标序列数")} {previous["target_count"]} · '
+               f'BLAST E-value ≤ {SEARCH_EVALUE} · max_hsps=5')
+    st.download_button(tr("下载本地 BLAST 原始命中表（TSV）"),
+                       hits.to_csv(index=False, sep="\t").encode(), "local_blast_hits.tsv",
+                       "text/tab-separated-values", on_click="ignore")
+    return previous
+
+
+def external_blast(selected):
     name, data, origin = selected
     if origin == "模拟教学数据":
         st.caption(tr(origin))
@@ -340,7 +371,7 @@ def blast():
                 reject_blast_table(kind, missing)
         except (ValueError, csv.Error) as exc:
             st.error(tr(str(exc)))
-            return
+            return None
         st.dataframe(raw.head(5), width="stretch", hide_index=True)
         suggested = suggest_mapping(raw.columns)
         if all(field in suggested for field in REQUIRED):
@@ -362,7 +393,52 @@ def blast():
             hits = session_result("blast_mapping", (file_key, delimiter, header, mapping), normalize_hits, raw, mapping)
         except ValueError as exc:
             st.error(tr(str(exc)))
+            return None
+
+    return (name, origin, file_key, delimiter, header, mapping, hits)
+
+
+def blast():
+    st.title(tr("BLAST 候选筛选"))
+    st.info(tr(NOTICE))
+    project_status()
+    project = st.session_state.get("project_sequences")
+    records = session_result("local_blast_records", project["key"], valid_records, project) if project else {}
+    previous = st.session_state.get("blast_result")
+    figures = st.session_state.setdefault("report_figures", {})
+    saved_figures = [key for key in figures if key.startswith("blast_")]
+    sources = [LOCAL_BLAST, EXTERNAL_BLAST] if records else [EXTERNAL_BLAST]
+    if st.session_state.get("local_blast_source_mode") not in sources:
+        st.session_state["local_blast_source_mode"] = EXTERNAL_BLAST if st.session_state.get("blast_source") else sources[0]
+    mode = st.radio(tr("BLAST 数据来源"), sources, horizontal=True, format_func=translator(), key="local_blast_source_mode")
+    local = None
+    exclude_identical = False
+    if mode == LOCAL_BLAST:
+        local = project_blast(project, records)
+        if local is None:
             return
+        name, origin = project["name"], LOCAL_BLAST
+        file_key = sha256(repr(local["key"]).encode()).hexdigest()
+        delimiter, header = "\t", "yes"
+        mapping = {column: column for column in LOCAL_BLAST_FIELDS}
+        hits = local["hits"]
+        exclude_identical = st.checkbox(tr("隐藏自命中及完全相同的序列命中"), value=True, key="local_blast_exclude_identical")
+        if hits.empty:
+            st.info(tr("BLAST 已正常完成，所选查询和目标范围内没有命中。"))
+    else:
+        st.link_button(tr("前往 NCBI BLAST 官方页面 ↗"), "https://blast.ncbi.nlm.nih.gov/Blast.cgi")
+        selected = source("blast", ["csv", "tsv", "txt", "tab", "out", "xlsx"])
+        if selected is None:
+            if previous and not previous.get("local_search"):
+                st.dataframe(previous["filtered"], hide_index=True)
+                next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
+            else:
+                st.info(tr("可选：上传已生成的外部 BLAST 命中表。"))
+            return
+        imported = external_blast(selected)
+        if imported is None:
+            return
+        name, origin, file_key, delimiter, header, mapping, hits = imported
 
     st.subheader(tr("筛选阈值"))
     st.caption(tr("一致性 pident 表示比对区段中相同位置的百分比；比特得分 bitscore 越高通常表示比对得分越高。"))
@@ -398,15 +474,25 @@ def blast():
         coverage_field = coverage = None
         st.caption(tr("本表没有可用的 Query coverage 数值。"))
 
-    thresholds = Thresholds(identity, evalue.strip(), length, coverage_field, coverage)
+    min_bitscore = st.number_input(tr("比特得分最低值（bitscore）"), min_value=0.0, value=0.0,
+                                  key="blast_min_bitscore")
+    thresholds = Thresholds(identity, evalue.strip(), length, coverage_field, coverage, min_bitscore)
+    eligible = hits.loc[~local["identical"]["identical"]] if exclude_identical else hits
+    if exclude_identical and not eligible.empty and len(eligible) < len(hits):
+        st.caption(f'{tr("已隐藏的相同序列命中")} · {len(hits) - len(eligible)}')
+    elif exclude_identical and eligible.empty and not hits.empty:
+        st.info(tr("当前只有自命中或完全相同序列的命中，可开启显示。"))
     try:
-        filtered = session_result("blast_filter", (file_key, delimiter, header, mapping, thresholds), filter_hits, hits, thresholds)
+        filtered = session_result("blast_filter", (file_key, delimiter, header, mapping, thresholds, exclude_identical), filter_hits, eligible, thresholds)
     except ValueError as exc:
         st.error(tr(str(exc)))
         return
-    fingerprint = (name, origin, file_key, delimiter, header, mapping, thresholds)
+    fingerprint = (name, origin, file_key, delimiter, header, mapping, thresholds, exclude_identical)
+    queries = pd.Series(local["queries"]) if local else hits["qseqid"]
     best, counts = session_result("blast_count", fingerprint,
-                                  lambda: (best_hits(filtered), candidate_counts(filtered, hits["qseqid"])))
+                                  lambda: (best_hits(filtered), candidate_counts(filtered, queries)))
+    if local:
+        counts = counts.assign(**{"Query Name": counts["qseqid"].map(local["query_names"])})
     timestamp = previous["timestamp"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["blast_result"] = {
         "key": fingerprint, "timestamp": timestamp, "name": name, "origin": origin,
@@ -414,6 +500,12 @@ def blast():
         "best": best, "counts": counts, "coverage_fields": fields, "delimiter": delimiter,
         "header": header,
     }
+    if local:
+        st.session_state["blast_result"]["local_search"] = {
+            "version": local["version"], "timestamp": local["timestamp"], "query_count": local["query_count"],
+            "target_count": local["target_count"], "exclude_identical": exclude_identical,
+            "evalue": SEARCH_EVALUE,
+        }
 
     if not previous or previous["key"] != fingerprint:
         for key in saved_figures:
@@ -421,7 +513,7 @@ def blast():
     for column, label, value in zip(st.columns(5),
                                     ("原始命中数", "筛选后命中数", "有候选的 Query", "排除记录数", "保留比例"),
                                     (len(hits), len(filtered), len(best), len(hits)-len(filtered),
-                                     f"{len(filtered)/len(hits):.1%}")):
+                                     f"{len(filtered)/len(hits):.1%}" if len(hits) else "0.0%")):
         column.metric(tr(label), value)
     if filtered.empty:
         st.warning(tr("当前阈值下没有保留的命中。"))
@@ -440,7 +532,7 @@ def blast():
     count_tab.caption(tr("对每个 Query 统计筛选后唯一的 Subject ID，保留候选数为 0 的 Query。"))
     count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
-        st.dataframe(rejection_reasons(hits, thresholds), width="stretch", hide_index=True)
+        st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)
     next_step("下一步：结果可视化 →", "结果可视化", result_view="blast")
 
 
@@ -534,10 +626,15 @@ def records():
     blast_result = st.session_state.get("blast_result")
     if (current_candidates() or blast_result) and st.button(tr("← 返回结果可视化")):
         navigate("结果可视化")
+    local_search = blast_result.get("local_search") if blast_result else None
     metadata = {}
     for label in (*METADATA, "数据库登录号"):
-        if not blast_result and label in ("BLAST 程序及版本", "参考数据库及版本"):
-            continue
+        if label in ("BLAST 程序及版本", "参考数据库及版本"):
+            if local_search:
+                metadata[label] = local_search["version"] if label == "BLAST 程序及版本" else "当前项目序列（临时核酸库）"
+                continue
+            if not blast_result:
+                continue
         widget = st.text_area if label == "分析备注" else st.text_input
         metadata[label] = widget(tr("研究说明与备注（可选）" if label == "分析备注" else label), key=f"research_{label}")
         if label in ("BLAST 程序及版本", "参考数据库及版本") and not metadata[label].strip():

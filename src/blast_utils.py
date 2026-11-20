@@ -135,15 +135,18 @@ class Thresholds:
     length: int = 1
     coverage_field: str | None = None
     coverage: float | None = None
+    min_bitscore: float = 0
 
 
 def threshold_checks(hits: pd.DataFrame, thresholds: Thresholds) -> pd.DataFrame:
     maximum = parse_evalue(thresholds.evalue)
     checks = pd.DataFrame({
         "pident 低于阈值": hits["pident"] >= thresholds.identity,
-        "E-value 高于阈值": hits["evalue"].map(lambda value: parse_evalue(value) <= maximum),
+        "E-value 高于阈值": hits["evalue"].map(lambda value: parse_evalue(value) <= maximum).astype(bool),
         "比对长度低于阈值": hits["length"] >= thresholds.length,
     }, index=hits.index)
+    if thresholds.min_bitscore > 0:
+        checks["bitscore 低于阈值"] = hits["bitscore"] >= thresholds.min_bitscore
     if thresholds.coverage_field is not None and thresholds.coverage is not None:
         if thresholds.coverage_field not in COVERAGE or thresholds.coverage_field not in hits:
             raise ValueError("所选 Query coverage 字段不存在。")
