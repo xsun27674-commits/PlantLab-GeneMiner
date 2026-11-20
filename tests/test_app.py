@@ -93,6 +93,9 @@ def test_home_import_routes_share_sequences_and_show_missing_blast_tools(monkeyp
 
     monkeypatch.setattr(pages, "executable_paths", unavailable)
     app = AppTest.from_file(str(APP), default_timeout=25).run()
+    assert app.button(key="home_local").label == "开始本地分析"
+    assert app.button(key="home_blast").label == "开始 BLAST 分析"
+    assert not any(button.label in ("开始分析", "开始使用 →") for button in app.button)
     app.button(key="home_blast").click().run()
     assert app.title[0].value == "数据导入与管理"
     app.checkbox(key="fasta_example").check().run()

@@ -111,9 +111,9 @@ def home():
         st.caption(tr("当前项目尚未导入序列。"))
     cards = (
         ("local", "序列比较与相似性筛选", "比较已上传 DNA 序列的相同与差异，分析序列一致性，并筛选相似序列。",
-         "开始序列比较 →", "FASTA 序列分析"),
+         "开始本地分析", "FASTA 序列分析"),
         ("blast", "BLAST 搜索与候选筛选", "选择参考序列和目标序列集合，通过 BLAST 搜索相似序列并筛选候选结果。",
-         "开始 BLAST 分析 →", "BLAST 搜索"),
+         "开始 BLAST 分析", "BLAST 搜索"),
     )
     for column, (path, title, description, action, destination) in zip(st.columns(2), cards):
         with column.container(key=f"home_path_{path}", border=True):
@@ -531,7 +531,7 @@ def blast():
         if selected is None:
             if previous and not previous.get("local_search"):
                 st.dataframe(previous["filtered"], hide_index=True)
-                next_step("下一步：分析结果 →", "分析结果", result_view="blast")
+                next_step("下一步：可视化与报告 →", "结果可视化", result_view="blast")
             else:
                 st.info(tr("可选：上传已生成的外部 BLAST 命中表。"))
                 next_step("前往 BLAST 搜索 →", "BLAST 搜索")
@@ -634,7 +634,7 @@ def blast():
     count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)
-    next_step("下一步：分析结果 →", "分析结果", result_view="blast")
+    next_step("下一步：可视化与报告 →", "结果可视化", result_view="blast")
 
 
 @st.fragment

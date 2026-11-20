@@ -332,9 +332,10 @@ def local_candidates_page():
                              "Reference Internal ID": reference, "Exclude self": exclude, "Sort": order},
                   "local_candidates", "candidates")
         render_pair_picker(project, stored, list(selected.index), "candidate", show_sequences=True)
-        if st.button(tr("下一步：分析结果 →"), type="primary"):
+        if st.button(tr("下一步：可视化与报告 →"), type="primary"):
             st.session_state["result_view"] = "local"
-            go_to("分析结果")
+            st.session_state["result_section"] = "结果可视化"
+            go_to("结果可视化")
     if st.button(tr("← 返回成对序列比对")):
         go_to("成对序列比对")
 
