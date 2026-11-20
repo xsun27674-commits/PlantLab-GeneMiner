@@ -381,19 +381,27 @@ def project_blast(project, records):
     except ValueError as exc:
         unavailable = str(exc)
         st.warning(tr(unavailable))
-    with st.form("project_blast_search"):
-        st.caption(tr("查询或目标留空时使用全部有效序列。"))
-        if len(records) != len(project["records"]):
-            st.warning(tr("空序列或含非法字符的记录已排除。"))
-        cols = st.columns(2)
-        queries = cols[0].multiselect(tr("查询序列（默认全部）"), available, format_func=labels.__getitem__,
-                                      key="local_blast_queries")
-        targets = cols[1].multiselect(tr("目标序列（默认全部）"), available, format_func=labels.__getitem__,
-                                      key="local_blast_targets")
-        run = st.form_submit_button(tr("使用当前序列运行 BLAST"), type="primary", disabled=unavailable is not None)
-    allowed = set(available)
-    queries, targets = (tuple(index for index in chosen if index in allowed) or tuple(available)
-                        for chosen in (queries, targets))
+    options = {str(index): index for index in available}
+
+    def select_records(column, label, key):
+        if key in st.session_state:
+            previous = st.session_state[key]
+            # Normalize selections saved with integer options and prune before widget serialization.
+            chosen = [str(value) for value in previous if str(value) in options] if isinstance(previous, (list, tuple)) else []
+            if chosen != previous:
+                st.session_state[key] = chosen
+        requested = column.multiselect(
+            tr(label), list(options), format_func=lambda token: labels[options[token]], key=key,
+        )
+        return tuple(options[token] for token in requested if token in options) or tuple(available)
+
+    st.caption(tr("查询或目标留空时使用全部有效序列。"))
+    if len(records) != len(project["records"]):
+        st.warning(tr("空序列或含非法字符的记录已排除。"))
+    left, right = st.columns(2)
+    queries = select_records(left, "查询序列（默认全部）", "local_blast_queries")
+    targets = select_records(right, "目标序列（默认全部）", "local_blast_targets")
+    run = st.button(tr("使用当前序列运行 BLAST"), type="primary", disabled=unavailable is not None)
     previous = st.session_state.get("local_blast_run")
     if previous and previous["key"][0] != project["key"]:
         previous = None

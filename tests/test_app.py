@@ -168,3 +168,38 @@ def test_local_isoform_filter_is_opt_in_and_uses_filtered_plot_data():
     app.checkbox(key=checkbox).uncheck().run()
     assert len(app.session_state["local_candidates_record"]["results"]) == 10
     assert app.session_state["batch_alignment"]["results"].equals(raw)
+
+
+def test_blast_mode_switch_prunes_stale_selections_before_rendering():
+    genes = [f"SIM_GENE_{i:02d}" for i in range(11)]
+    accessions = [f"SIM_{i:03d}.1" for i in range(33)]
+    project = {
+        "key": ("fixture", "33-cds"), "name": "11 genes", "origin": "test", "type": "nucleotide",
+        "records": [(name, "ATG" * (10 + i % 3)) for i, name in enumerate(accessions)],
+        "metadata": [{"gene": genes[i // 3], "gene_id": str(i // 3 + 1),
+                      "species": "Arabidopsis thaliana", "accession": name}
+                     for i, name in enumerate(accessions)],
+    }
+    app = AppTest.from_file(str(APP), default_timeout=25)
+    app.session_state["page"] = "BLAST 搜索"
+    app.session_state["project_sequences"] = project
+    # Mimic a snapshot saved before selectors switched to string IDs.
+    app.session_state["local_blast_queries"] = [0, 2]
+    app.session_state["local_blast_targets"] = [1, 5]
+    app.run()
+    queries, targets, scope = "local_blast_queries", "local_blast_targets", "local_blast_transcript_scope"
+    assert len(app.multiselect(key=queries).options) == 33
+    assert app.multiselect(key=queries).value == ["0", "2"]
+    assert app.multiselect(key=targets).value == ["1", "5"]
+    app.radio(key=scope).set_value("每个基因保留一条代表性转录本").run()
+    assert not app.exception
+    assert len(app.multiselect(key=queries).options) == len(app.multiselect(key=targets).options) == 11
+    assert app.multiselect(key=queries).value == ["2"]
+    assert app.multiselect(key=targets).value == ["5"]
+    assert app.multiselect(key=queries).options[0] == "SIM_GENE_00 · SIM_002.1"
+    app.radio(key=scope).set_value("保留全部转录本").run()
+    assert not app.exception
+    assert len(app.multiselect(key=queries).options) == 33
+    assert app.multiselect(key=queries).value == ["2"]
+    assert app.multiselect(key=targets).value == ["5"]
+    assert len(app.session_state["project_sequences"]["records"]) == 33
