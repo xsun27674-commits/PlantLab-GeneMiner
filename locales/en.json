@@ -579,5 +579,12 @@
   "项目批量比对需要核酸序列，可先导入项目数据。": "Batch comparison requires nucleotide sequences. Import them into the project first.",
   "项目数据": "Project data",
   "下一步：成对序列比对 →": "Next: pairwise alignment →",
-  "← 返回 FASTA 序列统计": "← Back to FASTA statistics"
+  "← 返回 FASTA 序列统计": "← Back to FASTA statistics",
+  "清空当前项目数据": "Clear current project data",
+  "将清空当前项目的原始序列、统计、比对、BLAST 结果及相关缓存。": "This clears the current project's source sequences, statistics, alignments, BLAST results, and related cache.",
+  "确认清空": "Confirm clear",
+  "取消": "Cancel",
+  "按基因筛选图表": "Filter chart by gene",
+  "当前比对结果没有可绘制的数值。局部比对无命中时，一致性为空。": "No values are available to plot. Identity is unavailable for local alignments with no hits.",
+  "热图未能加载。请刷新后重试。": "The heatmap could not load. Refresh and try again."
 }

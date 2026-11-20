@@ -14,8 +14,7 @@ window.addEventListener("message", event => {
     const {html, height} = event.data.args;
     if (content !== html) {
       content = html;
-      const prefix = location.pathname.split("/component/")[0];
-      frame.srcdoc = html.replaceAll('src="./component/', 'src="' + location.origin + prefix + '/component/');
+      frame.srcdoc = html;
     }
     frame.style.height = height + "px";
     send("streamlit:setFrameHeight", {height});

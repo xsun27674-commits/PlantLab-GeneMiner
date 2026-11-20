@@ -125,6 +125,22 @@ def home():
                 ready = project if path == "local" else project_nucleotide_records(project)
                 navigate(destination if ready else "数据导入与管理")
 
+    if st.button(tr("清空当前项目数据"), key="home_clear_project",
+                 disabled=not any(st.session_state.get(key) is not None for key in (
+                     "project_sequences", "fasta_source", "sequence_grid_source", "blast_source",
+                     "blast_result", "local_blast_run", "pairwise_result", "alignment_fasta"))):
+        st.dialog(tr("清空当前项目数据"), dismissible=False)(confirm_project_clear)()
+
+
+def confirm_project_clear():
+    st.warning(tr("将清空当前项目的原始序列、统计、比对、BLAST 结果及相关缓存。"))
+    left, right = st.columns(2)
+    if left.button(tr("取消"), key="cancel_project_clear"):
+        st.rerun()
+    if right.button(tr("确认清空"), key="confirm_project_clear", type="primary"):
+        clear_sequence_project()
+        st.rerun()
+
 
 def run_time():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -223,8 +239,6 @@ def next_step(label, destination, *, status=None, summary=None, result_view=None
 def sequence_data_page():
     st.title(tr("数据导入与管理"))
     project_status()
-    if st.session_state.get("project_sequences"):
-        st.button(tr("清空当前序列数据"), on_click=clear_sequence_project)
     previous = st.session_state.get("fasta_result")
     try:
         selected = sequence_source()
@@ -321,15 +335,15 @@ def fasta():
         st.caption(tr("GC 使用 Biopython 的模糊碱基排除规则，S 与 W 按已知 GC 类别计入。无法计算时留空。"))
     project = st.session_state["project_sequences"]
     named = frame.assign(**{tr("行号"): range(1, len(frame) + 1)})
-    named.insert(1, "显示名称", record_labels(project))
+    named.insert(0, "显示名称", record_labels(project))
     identifiers = [record_info(project, idx) for idx in range(len(frame))]
     for key, label in (("original", "Original Sequence ID"), ("gene", "Gene"), ("accession", "Accession"), ("id", "Internal ID")):
         named[label] = [item[key] or tr("待核实") for item in identifiers]
     st.dataframe(display_frame(named), width="stretch", hide_index=True)
-    frame = frame.assign(序列类型=labels[sequence_type])
-    plot_distribution(frame, "fasta_length", "序列长度", "序列长度", "序列 ID")
+    frame = named.assign(序列类型=labels[sequence_type])
+    plot_distribution(frame, "fasta_length", "序列长度", "序列长度", "显示名称")
     if sequence_type == "nucleotide" and frame["GC (%)"].notna().any():
-        plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "序列 ID")
+        plot_distribution(frame.dropna(subset=["GC (%)"]), "fasta_gc", "GC (%)", "GC 含量", "显示名称")
     st.download_button(tr("下载 FASTA 序列统计 CSV"), csv_bytes(named.assign(**{"Source file": name, "Origin": origin})), "fasta_statistics.csv", "text/csv")
     if sequence_type == "nucleotide" and len(frame) >= 2:
         next_step("下一步：成对序列比对 →", "成对序列比对",
@@ -594,6 +608,11 @@ def blast():
                                   lambda: (best_hits(filtered), candidate_counts(filtered, queries)))
     if local:
         counts = counts.assign(**{"Query Name": counts["qseqid"].map(local["query_names"])})
+        query_info = pd.DataFrame([record_info(project, index) for index in local["key"][1]],
+                                  index=local["queries"])
+        for field, key in (("Query Sequence ID", "original"), ("Query Gene", "gene"),
+                           ("Query Accession", "accession")):
+            counts[field] = counts["qseqid"].map(query_info[key])
     timestamp = previous["timestamp"] if previous and previous["key"] == fingerprint else run_time()
     st.session_state["blast_result"] = {
         "key": fingerprint, "timestamp": timestamp, "name": name, "origin": origin,
@@ -627,11 +646,11 @@ def blast():
         key=lambda values: values.map(parse_evalue) if sort_field == "evalue" else values,
         kind="stable",
     )
-    result_tab.dataframe(display_frame(compared), width="stretch", hide_index=True)
+    result_tab.dataframe(readable_results(compared), width="stretch", hide_index=True)
     best_tab.caption(tr("同一 Query 按 Bit score 降序、E-value 升序、Identity 降序、比对长度降序、Subject ID 升序、原始行序排序，取首条。"))
-    best_tab.dataframe(display_frame(best), width="stretch", hide_index=True)
+    best_tab.dataframe(readable_results(best), width="stretch", hide_index=True)
     count_tab.caption(tr("对每个 Query 统计筛选后唯一的 Subject ID，保留候选数为 0 的 Query。"))
-    count_tab.dataframe(display_frame(counts), width="stretch", hide_index=True)
+    count_tab.dataframe(readable_results(counts), width="stretch", hide_index=True)
     if len(filtered) < len(hits) and st.checkbox(tr("查看排除原因")):
         st.dataframe(rejection_reasons(eligible, thresholds), width="stretch", hide_index=True)
     next_step("下一步：可视化与报告 →", "结果可视化", result_view="blast")
@@ -640,14 +659,33 @@ def blast():
 @st.fragment
 def plot_distribution(frame, key, field, title, id_field):
     mode = st.selectbox(f"{tr(title)} · {tr('图形')}", ["自动", "柱状图", "散点图", "直方图"], key=f"chart_mode_{key}", format_func=translator())
-    histogram = mode == "直方图" or (mode == "自动" and len(frame) > 20)
-    hover_fields = ("序列 ID", "序列类型", "序列长度", "qseqid", "sseqid", "bitscore", "evalue")
+    gene_column = next((column for column in ("Gene", "Subject Gene") if column in frame), None)
+    if len(frame) > 50 and gene_column:
+        genes = sorted(frame[gene_column].dropna().astype(str).unique())
+        chosen = st.multiselect(tr("按基因筛选图表"), genes, key=f"chart_genes_{key}")
+        if chosen:
+            frame = frame.loc[frame[gene_column].isin(chosen)]
+    histogram = mode == "直方图" or (mode == "自动" and len(frame) > 50)
+    horizontal = mode == "柱状图" or (mode == "自动" and not histogram)
+    if id_field == "sseqid" and "Subject Name" in frame:
+        id_field = "Subject Name"
+    hover_fields = ("序列 ID", "Original Sequence ID", "Gene", "Accession", "Internal ID",
+                    "序列类型", "序列长度", "Query Name", "Subject Name", "Query Sequence ID", "Query Gene", "Query Accession",
+                    "Subject Sequence ID", "Subject Original Sequence ID", "Subject Gene", "Subject Accession",
+                    "qseqid", "sseqid", "bitscore", "evalue")
     hover = [name for name in hover_fields if name in frame and name != field]
     chart_panel(
-        key, lambda grouped: charts.distribution(frame, field, title, id_field, mode, grouped, hover),
-        frame, ChartStyle(title, title if histogram else id_field, "记录数" if histogram else title),
+        key, lambda grouped: charts.distribution(frame, field, title, id_field, "直方图" if histogram else "柱状图" if horizontal else mode,
+                                                   grouped, hover, horizontal=horizontal),
+        frame, ChartStyle(title, title if histogram or horizontal else id_field,
+                          "记录数" if histogram else id_field if horizontal else title),
         groupable="qseqid" in frame,
     )
+
+
+def readable_results(frame):
+    names = [field for field in ("Query Name", "Subject Name") if field in frame]
+    return display_frame(frame[[*names, *(column for column in frame.columns if column not in names)]])
 
 
 RESULT_ORIGINS = {"local": "本地比对候选筛选", "blast": "BLAST 候选筛选"}
@@ -672,7 +710,7 @@ def show_results():
         st.info(tr("请先完成所选路径的候选筛选。"))
     else:
         frame = result["results" if path == "local" else "filtered"]
-        st.dataframe(display_frame(frame), width="stretch", hide_index=True)
+        st.dataframe(readable_results(frame), width="stretch", hide_index=True)
         filename = "local_candidates.csv" if path == "local" else "blast_filtered.csv"
         st.download_button(tr("下载当前结果 CSV"), csv_bytes(frame), filename, "text/csv", on_click="ignore")
         next_step("下一步：可视化与报告 →", "结果可视化")
@@ -709,7 +747,7 @@ def visualization():
                 ChartStyle("筛选前后命中数量", "阶段", "命中数量", legend=False, legend_title="", category_colors=True))
     counts = result["counts"]
     chart_panel("blast_candidates", lambda grouped: charts.query_bars(counts, grouped), counts,
-                ChartStyle("各 Query 候选数量", "Query", "候选数量"), groupable=True)
+                ChartStyle("各 Query 候选数量", "候选数量", "Query"), groupable=True)
     if hits.empty:
         st.info(tr("当前没有保留的命中可用于分布图。"))
         return

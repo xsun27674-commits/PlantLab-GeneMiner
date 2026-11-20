@@ -40,3 +40,17 @@ def test_full_legend_gets_its_own_space():
     assert figure.layout.legend.yref == "container"
     assert figure.layout.legend.orientation == "h"
     assert figure.layout.height > original_height
+
+
+def test_horizontal_sequence_labels_remain_readable_and_keep_all_points():
+    for count in (12, 32, 75):
+        labels = [f"MLH1 · NM_{index:06}.1" for index in range(count)]
+        data = pd.DataFrame({"Name": labels, "length": range(count)})
+        figure = apply_style(distribution(data, "length", "Length", "Name",
+                                          mode="柱状图", horizontal=True),
+                             ChartStyle("Length", "Length", "Name"))
+        fit_category_axis(figure)
+        assert list(figure.data[0].y) == labels
+        assert list(figure.layout.yaxis.tickvals) == labels
+        assert [unescape(tick.replace("<br>", "")) for tick in figure.layout.yaxis.ticktext] == labels
+        assert figure.layout.yaxis.range[0] == min(50, count) - .5

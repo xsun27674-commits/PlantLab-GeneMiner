@@ -14,7 +14,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.batch_alignment import AlignmentJob, make_plan, matrix_data, local_aligner, similarity_order
-from src.chart_editor import PLOTLY_SCRIPT, browser_chart
+from src.chart_editor import browser_chart
 from src.export_utils import csv_bytes, excel_bytes
 from src.i18n import tr
 from src.project_data import current_candidates, record_info, record_labels, project_status
@@ -341,12 +341,21 @@ def local_candidates_page():
 
 
 def matrix_panel(project, stored, indices, query, labels):
-    metric = st.radio(tr("相似性热图"), ("Identity (%)", "Alignment Score"), horizontal=True,
-                      key="alignment_setting_matrix_metric")
-    ordering = ["按基因排序", "输入顺序"]
-    if query is None and len(stored["key"]) == 6:
-        ordering.append("按相似性聚类")
-    order = st.selectbox(tr("序列排序"), ordering, format_func=tr, key="alignment_setting_matrix_order")
+    left, right = st.columns([.65, .35])
+    preview = left.container(key="chart_preview_matrix")
+    with right.container(height=365, border=True):
+        st.markdown(f"**{tr('编辑图表')}**")
+        metric = st.radio(tr("相似性热图"), ("Identity (%)", "Alignment Score"), horizontal=True,
+                          key="alignment_setting_matrix_metric")
+        ordering = ["按基因排序", "输入顺序"]
+        if query is None and len(stored["key"]) == 6:
+            ordering.append("按相似性聚类")
+        order = st.selectbox(tr("序列排序"), ordering, format_func=tr, key="alignment_setting_matrix_order")
+        small = len(indices) <= 12
+        numbers = small and st.checkbox(tr("在单元格显示数值"), key="alignment_setting_matrix_numbers")
+        color_range = (0, 100)
+        if metric == "Identity (%)":
+            color_range = st.slider(tr("一致性色标 (%)"), 0, 100, (0, 100), key="alignment_setting_matrix_scale")
     indices = list(indices)
     if order == "按基因排序":
         indices.sort(key=lambda idx: (not record_info(project, idx)["gene"], labels[idx].casefold(), idx))
@@ -357,11 +366,6 @@ def matrix_panel(project, stored, indices, query, labels):
                                      stored["results"], stored["pairs"], indices)
         except ValueError as exc:
             st.warning(tr(str(exc)))
-    small = len(indices) <= 12
-    numbers = small and st.checkbox(tr("在单元格显示数值"), key="alignment_setting_matrix_numbers")
-    color_range = (0, 100)
-    if metric == "Identity (%)":
-        color_range = st.slider(tr("一致性色标 (%)"), 0, 100, (0, 100), key="alignment_setting_matrix_scale")
     row_ids, values = matrix_data(stored["results"], stored["pairs"], indices, metric, query is None, query)
     xlabels, ylabels = [labels[idx] for idx in indices], [labels[idx] for idx in row_ids]
     row_label = next(name for name in ("Query", *(f"Query [{i}]" for i in range(len(xlabels) + 1)))
@@ -369,6 +373,9 @@ def matrix_panel(project, stored, indices, query, labels):
     matrix = pd.DataFrame(values, index=ylabels, columns=xlabels).reset_index(names=row_label)
     if query is None and not stored["key"][5]:
         st.caption(tr("默认不计算自比对，矩阵对角线留空。"))
+    if not any(value is not None for row in values for value in row):
+        preview.info(tr("当前比对结果没有可绘制的数值。局部比对无命中时，一致性为空。"))
+        return None
     if not small:
         st.caption(tr("大矩阵按需显示坐标标签。悬停可查看完整信息，下载表格可取得完整矩阵。"))
     stem = "local_identity_matrix" if metric == "Identity (%)" else "local_score_matrix"
@@ -378,18 +385,26 @@ def matrix_panel(project, stored, indices, query, labels):
                             stored, color_range)
     st.session_state.setdefault("report_figures", {})["local_alignment_matrix"] = (metric, figure)
     click_script = """
+    document.getElementById("matrix-loading").hidden = true;
     document.getElementById("chart").on("plotly_click", event => {
         const data = event.points[0]?.customdata;
         if (data && Number.isInteger(data[3])) {
             parent.postMessage({type: "plantlab_pair", row: data[3]}, "*");
         }
     });"""
-    html = pio.to_html(figure, full_html=False, include_plotlyjs=PLOTLY_SCRIPT, div_id="chart", post_script=click_script,
+    html = pio.to_html(figure, full_html=False, include_plotlyjs=True, div_id="chart", post_script=click_script,
                        config={"displaylogo": False, "modeBarButtonsToRemove": ["toImage"], "scrollZoom": True})
+    message = escape(tr("热图未能加载。请刷新后重试。"))
+    # Embed the renderer so the nested iframe does not depend on a proxy-relative asset URL.
+    html = ('<p id="matrix-loading" role="status" hidden>' + message + '</p>'
+            '<script>for (const event of ["error","unhandledrejection"]) {'
+            'window.addEventListener(event, () => {document.getElementById("matrix-loading").hidden = false;});}'
+            '</script>' + html)
     rendered = browser_chart(html, stem, figure.layout).replace("overflow:hidden", "overflow:auto")
     component_key = sha256(repr(stored["key"]).encode()).hexdigest()
-    return matrix_component(html=rendered, height=min(1150, figure.layout.height + 84),
-                            key=f"matrix_{component_key}", default=None)
+    with preview:
+        return matrix_component(html=rendered, height=min(540, figure.layout.height + 84),
+                                key=f"matrix_{component_key}", default=None)
 
 
 def build_matrix_figure(project, values, indices, row_ids, xlabels, ylabels, metric, numbers,
@@ -410,7 +425,7 @@ def build_matrix_figure(project, values, indices, row_ids, xlabels, ylabels, met
             row.append((hover[first], hover[second], length, key))
         metadata.append(row)
     z = go.Heatmap(z=values, x=list(range(len(indices))), y=list(range(len(row_ids))),
-                   colorscale="Viridis", customdata=metadata, hoverongaps=False,
+                   colorscale="Viridis", colorbar=dict(title=metric), customdata=metadata, hoverongaps=False,
                    hovertemplate="Query ID / Gene / Accession:<br>%{customdata[0]}<br><br>"
                                  "Subject ID / Gene / Accession:<br>%{customdata[1]}<br><br>"
                                  + metric + ": %{z:.3f}<br>Alignment length: %{customdata[2]}<extra></extra>")

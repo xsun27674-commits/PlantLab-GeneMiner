@@ -60,7 +60,7 @@
     border: 1px solid #ddece2;
     border-radius: 1.4rem;
     background: #f3f9f5;
-    padding: clamp(1.2rem, 4vw, 3.8rem);
+    padding: clamp(.75rem, 2vw, 1.45rem);
 }
 .st-key-home_intro [data-testid="stHorizontalBlock"] { align-items: center; gap: clamp(1rem, 4vw, 3rem); }
 .plantlab-hero h1 {
@@ -72,8 +72,8 @@
     overflow-wrap: anywhere;
 }
 .plantlab-hero h2 { color: #255b42; margin: 0 0 .6rem; font-size: clamp(1.05rem, 2vw, 1.45rem); }
-.plantlab-hero p { color: #466559; margin: 0 0 1.25rem; }
-.plantlab-hero-art { display: block; width: min(100%, 345px); height: auto; margin: auto; }
+.plantlab-hero p { color: #466559; margin: 0; }
+.plantlab-hero-art { display: block; width: min(100%, 190px); height: auto; margin: auto; }
 .st-key-home_path_local, .st-key-home_path_blast {
     background: #f7fbf8;
     border-color: #ddece2;
@@ -81,7 +81,7 @@
 .st-key-home_local button, .st-key-home_blast button { background: #176b4d; border-color: #176b4d; padding: .52rem 1rem; }
 .st-key-home_local button:hover, .st-key-home_blast button:hover { background: #12563e; border-color: #12563e; }
 @media (max-width: 650px) {
-    .plantlab-hero-art { width: min(62%, 210px); }
+    .plantlab-hero-art { width: min(55%, 120px); }
 }
 
 /* Streamlit wraps its columns according to container size. These two rows
@@ -129,3 +129,13 @@
 }
 .st-key-workflow_step button p { font-size: 1rem; font-weight: 650; }
 .st-key-workflow_step button:hover { background: #12563e; border-color: #12563e; color: white; }
+
+@media (max-width: 820px) {
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] div[class*="st-key-chart_preview_"]) {
+        flex-wrap: wrap;
+    }
+    [data-testid="stHorizontalBlock"]:has(> [data-testid="stColumn"] div[class*="st-key-chart_preview_"]) > [data-testid="stColumn"] {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+}

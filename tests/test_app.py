@@ -113,3 +113,20 @@ def test_home_import_routes_share_sequences_and_show_missing_blast_tools(monkeyp
     assert app.metric[0].value == "6"
     assert app.session_state["project_sequences"]["key"] == project_key
     assert not any(".zip" in uploader.proto.type for uploader in app.get("file_uploader"))
+
+
+def test_clear_project_data_removes_current_results_and_keeps_project_identity(monkeypatch):
+    import streamlit as st
+    from src.project_data import clear_sequence_project
+
+    state = {"workspace_id": "current", "project_name": "saved project",
+             "project_sequences": {"name": "test"}, "blast_result": {"origin": "external"},
+             "blast_source": ("hits.tsv", b"result", "external"), "pairwise_result": ("key", "value"),
+             "_timed_batch_plan": "cached", "report_figures": {"chart": "figure"},
+             "fasta_source": ("sample.fasta", b"sequence", "source")}
+    monkeypatch.setattr(st, "session_state", state)
+    clear_sequence_project()
+    assert state["workspace_id"] == "current"
+    assert state["project_name"] == "saved project"
+    assert not {"project_sequences", "blast_result", "pairwise_result", "blast_source",
+                "fasta_source", "_timed_batch_plan", "report_figures"} & state.keys()

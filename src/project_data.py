@@ -182,12 +182,14 @@ def current_candidates():
 
 def clear_sequence_project():
     invalidate_sequence_results()
-    for key in ("fasta_source", "sequence_grid_source", "sequence_grid_base", "sequence_ncbi_applied",
-                "sequence_ncbi_table", "sequence_ncbi_selection"):
+    for key in ("fasta_source", "blast_source", "blast_result", "blast_upload", "blast_example",
+                "pairwise_result", "alignment_fasta", "alignment_upload", "sequence_input_paste",
+                "sequence_grid_source", "sequence_grid_base", "sequence_ncbi_applied",
+                "sequence_ncbi_table", "sequence_ncbi_selection", "report_figures"):
         st.session_state.pop(key, None)
     for key in list(st.session_state):
-        if key.startswith(("_timed_fasta_", "_timed_ncbi_", "_timed_sequence_",
-                           "_timed_project_sequences", "_timed_batch_detail")):
+        if key.startswith(("_timed_", "_prepared_", "_matrix_click_", "matrix_", "ncbi_",
+                           "alignment_setting_sequence_", "chart_genes_")):
             st.session_state.pop(key, None)
     st.session_state["fasta_example"] = False
     st.session_state["fasta_upload_revision"] = st.session_state.get("fasta_upload_revision", 0) + 1

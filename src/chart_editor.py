@@ -118,7 +118,7 @@ def apply_style(figure, style):
     custom_palette = query_palette(style.query_palette) if style.query_colors else {}
     for index, trace in enumerate(fig.data):
         color = PALETTE[(index - 1) % len(PALETTE)] if style.query_colors and index else style.color
-        color = custom_palette.get(trace.name, color)
+        color = custom_palette.get(trace.name, custom_palette.get(trace.legendgroup, color))
         if style.category_colors:
             color = {"筛选前": style.before_color, "筛选后": style.after_color}.get(trace.name, color)
         updates = {"opacity": style.opacity}
@@ -138,7 +138,7 @@ def apply_style(figure, style):
     )
     for update, title, limits in (
         (fig.update_xaxes, style.x_title, "" if categories_on_x(fig) else style.x_range),
-        (fig.update_yaxes, style.y_title, style.y_range),
+        (fig.update_yaxes, style.y_title, "" if categories_on_axis(fig, "y") else style.y_range),
     ):
         update(title_text=title, showgrid=style.grid, showticklabels=style.ticks,
                ticks="outside" if style.ticks else "", range=axis_range(limits), title_standoff=14)
@@ -159,11 +159,15 @@ def label_lines(value, width=18):
 
 
 def categories_on_x(figure):
-    axis = figure.layout.xaxis
+    return categories_on_axis(figure, "x")
+
+
+def categories_on_axis(figure, coordinate):
+    axis = figure.layout[f"{coordinate}axis"]
     if axis.type not in (None, "category"):
         return []
-    values = [value for trace in figure.data if getattr(trace, "x", None) is not None
-              for value in trace.x]
+    values = [value for trace in figure.data if getattr(trace, coordinate, None) is not None
+              for value in getattr(trace, coordinate)]
     if not values or not all(isinstance(value, str) for value in values):
         return []
     return list(dict.fromkeys(axis.categoryarray if axis.categoryarray is not None else values))
@@ -184,6 +188,22 @@ def numeric_range(container, key, label, value, fallback):
 
 def fit_category_axis(figure, limit=0):
     """Choose readable ticks while retaining every plotted point."""
+    vertical = categories_on_axis(figure, "y")
+    if vertical:
+        shown = vertical[:limit] if limit else vertical
+        names = (figure.layout.meta or {}).get("category_labels", {})
+        # Keep every category in the trace. Large explicit per-record charts start zoomed in.
+        count = min(len(shown), 50)
+        ticks = shown
+        lines = [label_lines(names.get(tick) or tick, width=23) for tick in ticks]
+        figure.update_yaxes(type="category", categoryorder="array", categoryarray=vertical,
+                            range=[count - .5, -.5],
+                            tickmode="array", tickvals=ticks,
+                            ticktext=["<br>".join(map(escape, row)) for row in lines],
+                            automargin=True, tickfont_size=11)
+        height = 100 + sum(max(25, 15 * len(row)) for row in lines[:count])
+        figure.update_layout(height=max(figure.layout.height, height))
+        return
     axis = figure.layout.xaxis
     ordered = categories_on_x(figure)
     if not ordered:
@@ -269,7 +289,8 @@ def chart_panel(key, builder, data, defaults, groupable=False):
 def _chart_panel(key, builder, data, defaults, groupable):
     baseline = defaults
     heading = st.empty()
-    preview = st.container()
+    left, right = st.columns([.65, .35])
+    preview = left.container(key=f"chart_preview_{key}")
     style_key = f"chart_style_{key}"
     previous_defaults = st.session_state.get(f"chart_defaults_{key}", defaults)
     st.session_state[f"chart_defaults_{key}"] = defaults
@@ -280,7 +301,8 @@ def _chart_panel(key, builder, data, defaults, groupable):
             current = replace(current, **{field: value})
             st.session_state[f"style_value_{key}_{field}"] = value
     defaults = current
-    with elapsed(f"chart_controls.{key}"), st.expander(tr("编辑图表")):
+    with elapsed(f"chart_controls.{key}"), right.container(height=420, border=True):
+        st.markdown(f"**{tr('编辑图表')}**")
         if st.button(tr("恢复默认样式"), key=f"reset_style_{key}"):
             defaults = baseline
             reset_controls(key, defaults)
@@ -311,7 +333,8 @@ def _chart_panel(key, builder, data, defaults, groupable):
         trace_type = {trace.type for trace in base_figure.data}
         basics = {"title", "category_colors", "before_color", "after_color", "color"}
         values = asdict(defaults)
-        categories = categories_on_x(base_figure)
+        y_categories = categories_on_axis(base_figure, "y")
+        categories = categories_on_x(base_figure) or y_categories
         if categories:
             if axes_section.checkbox(tr("仅显示前 N 个类别"), value=bool(defaults.category_limit),
                                      key=f"category_limit_enabled_{key}"):
@@ -321,9 +344,10 @@ def _chart_panel(key, builder, data, defaults, groupable):
                     key=f"category_count_{key}")
             else:
                 values["category_limit"] = 0
-        else:
+        if not categories_on_x(base_figure):
             values["x_range"] = numeric_range(axes_section, f"x_range_{key}", "横轴", defaults.x_range, (0, 100))
-        values["y_range"] = numeric_range(axes_section, f"y_range_{key}", "纵轴", defaults.y_range, (0, 100))
+        if not y_categories:
+            values["y_range"] = numeric_range(axes_section, f"y_range_{key}", "纵轴", defaults.y_range, (0, 100))
         for index, (field, label) in enumerate(names.items()):
             control = basic if field in basics else (
                 axes[index % 2] if field in ("x_title", "y_title", "x_range", "y_range", "ticks")
@@ -375,7 +399,7 @@ def _chart_panel(key, builder, data, defaults, groupable):
     fit_category_axis(figure, style.category_limit)
     figure.update_xaxes(automargin=True)
     figure.update_yaxes(automargin=True)
-    figure.update_layout(meta={"axis_source": [style.x_title, style.y_title]})
+    figure.update_layout(meta={**(figure.layout.meta or {}), "axis_source": [style.x_title, style.y_title]})
     responsive = type(figure)(figure)
     if style.query_colors:
         fit_query_legend(figure)
@@ -392,7 +416,8 @@ def _chart_panel(key, builder, data, defaults, groupable):
                        config={"displaylogo": False, "responsive": True,
                                "modeBarButtonsToRemove": ["toImage"]})
     with preview:
-        components.html(browser_chart(html, filename, figure.layout), height=responsive.layout.height + 66)
+        components.html(browser_chart(html, filename, figure.layout).replace("overflow:hidden", "overflow:auto"),
+                        height=min(540, responsive.layout.height + 66), scrolling=True)
     with st.expander(tr("更多")):
         exports = st.columns(3)
         if exports[0].button(tr("准备交互 HTML"), key=f"prepare_html_{key}"):
@@ -423,7 +448,7 @@ button {{ border:1px solid #bad2c8; border-radius:7px; padding:7px 12px;
           background:#f5faf7; color:#176b4d; cursor:pointer; }}
 </style>
 <script>
-async function compactLegend(chart, resizeFrame) {{
+async function compactLegend(chart) {{
   const legend = chart.querySelector('.legend');
   const title = chart.querySelector('.xtitle');
   if (!legend || !title || !legend.getBoundingClientRect().height || !chart.clientWidth) return;
@@ -433,9 +458,6 @@ async function compactLegend(chart, resizeFrame) {{
     const bottom = Math.max(35, chart.layout.margin.b + change);
     const height = chart.layout.height + bottom - chart.layout.margin.b;
     await Plotly.relayout(chart, {{height, 'margin.b': bottom}});
-  }}
-  if (resizeFrame && window.frameElement) {{
-    window.frameElement.style.height = (chart.layout.height + 66) + 'px';
   }}
 }}
 function watchLegend(chart) {{
@@ -449,8 +471,7 @@ function watchLegend(chart) {{
     clearTimeout(timer);
     timer = setTimeout(async () => {{
       await Plotly.relayout(chart, {{width, autosize: false, height: baseHeight, 'margin.b': baseBottom}});
-      await compactLegend(chart, true);
-      window.scrollTo(0, 0);
+      await compactLegend(chart);
     }}, 90);
   }};
   window.addEventListener('resize', update);
@@ -477,7 +498,7 @@ document.querySelectorAll('button[data-format]').forEach(button => {{
       try {{
         if (layout.legend && layout.legend.orientation === 'h') {{
           await Plotly.newPlot(target, chart.data, layout, {{staticPlot:true, displaylogo:false}});
-          await compactLegend(target, false);
+          await compactLegend(target);
           exportOptions.height = target.layout.height;
           await Plotly.downloadImage(target, exportOptions);
         }} else {{
